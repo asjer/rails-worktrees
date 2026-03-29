@@ -1,6 +1,23 @@
 module Rails
   module Worktrees
     VERSION: String
-    # See the writing guide of rbs: https://github.com/ruby/rbs#guides
+
+    class Error < StandardError
+    end
+
+    class Configuration
+      attr_accessor bootstrap_env: bool
+      attr_accessor workspace_root: String?
+      attr_accessor branch_prefix: String
+      attr_accessor dev_port_range: ::Range[Integer]
+      attr_accessor name_sources_path: String
+      attr_accessor used_names_file: String
+      attr_accessor legacy_used_names_files: Array[String]
+      attr_accessor worktree_database_suffix_max_length: Integer
+    end
+
+    def self.configuration: () -> Configuration
+    def self.configure: () { (Configuration) -> void } -> Configuration
+    def self.reset_configuration!: () -> Configuration
   end
 end

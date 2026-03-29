@@ -1,0 +1,4 @@
+# Example Procfile.dev entry for worktree-aware DEV_PORT usage.
+# Copy the web line into your Procfile.dev if you want bin/dev, Foreman, or Overmind
+# to respect the worktree-local DEV_PORT that bin/wt writes into .env.
+web: env RUBY_DEBUG_OPEN=true bin/rails server -b 0.0.0.0 -p ${DEV_PORT:-3000}
