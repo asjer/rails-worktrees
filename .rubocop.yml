@@ -1,0 +1,16 @@
+plugins:
+  - rubocop-performance
+  - rubocop-rake
+  - rubocop-rspec
+
+AllCops:
+  TargetRubyVersion: 3.2
+  NewCops: enable
+
+Bundler/OrderedGems:
+  Description: Gems within groups in the Gemfile should be alphabetically sorted.
+  Enabled: true
+
+Style/StringLiterals:
+  Description: Checks if uses of quotes match the configured preference.
+  EnforcedStyle: single_quotes
