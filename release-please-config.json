@@ -2,6 +2,7 @@
   "include-component-in-tag": false,
   "packages": {
     ".": {
+      "initial-version": "0.1.0",
       "release-type": "ruby",
       "package-name": "rails-worktrees",
       "version-file": "lib/rails/worktrees/version.rb",

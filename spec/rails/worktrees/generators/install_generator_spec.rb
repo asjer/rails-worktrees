@@ -1,0 +1,171 @@
+# frozen_string_literal: true
+
+require 'fileutils'
+require 'tmpdir'
+
+require 'rails/worktrees'
+require 'generators/rails/worktrees/install_generator'
+
+RSpec.describe Rails::Worktrees::Generators::InstallGenerator do
+  let(:tmpdir) { Dir.mktmpdir('rails-worktrees-generator-spec') }
+
+  around do |example|
+    FileUtils.mkdir_p(File.join(tmpdir, 'config'))
+    write_database_yml(
+      "development:\n  database: demo_app_development_primary\n\ntest:\n  database: demo_app_test_primary\n"
+    )
+    example.run
+  ensure
+    FileUtils.rm_rf(tmpdir)
+  end
+
+  def write_database_yml(content)
+    File.write(File.join(tmpdir, 'config/database.yml'), content)
+  end
+
+  def read_database_yml
+    File.read(File.join(tmpdir, 'config/database.yml'))
+  end
+
+  def read_initializer
+    File.read(File.join(tmpdir, 'config/initializers/rails_worktrees.rb'))
+  end
+
+  def read_procfile_worktree_example
+    File.read(File.join(tmpdir, 'Procfile.dev.worktree.example'))
+  end
+
+  def write_mise_toml(content)
+    File.write(File.join(tmpdir, 'mise.toml'), content)
+  end
+
+  def run_generator(*args)
+    described_class.start(args, destination_root: tmpdir)
+  end
+
+  def capture_generator_output
+    output = +''
+    allow(described_class).to receive(:new).and_wrap_original do |original, *args, **kwargs|
+      generator = original.call(*args, **kwargs)
+      allow(generator).to receive(:say).and_wrap_original do |orig_say, *say_args|
+        output << say_args.first.to_s << "\n"
+        orig_say.call(*say_args)
+      end
+      generator
+    end
+    run_generator
+    output
+  end
+
+  def suffix
+    "<%= ENV.fetch('WORKTREE_DATABASE_SUFFIX', '') %>"
+  end
+
+  it 'installs bin/wt, the initializer, and patches config/database.yml' do
+    run_generator
+
+    expect(File.exist?(File.join(tmpdir, 'bin/wt'))).to be(true)
+    expect(File.exist?(File.join(tmpdir, 'config/initializers/rails_worktrees.rb'))).to be(true)
+    expect(File.exist?(File.join(tmpdir, 'Procfile.dev.worktree.example'))).to be(true)
+    expect(read_database_yml).to include("demo_app_development#{suffix}_primary")
+    expect(read_database_yml).to include("demo_app_test#{suffix}_primary")
+  end
+
+  it 'leaves the new sibling-directory default implicit in the initializer' do
+    run_generator
+
+    expect(read_initializer).to include('By default, worktrees go in a sibling "<project>.worktrees" directory.')
+    expect(read_initializer).to include('# config.bootstrap_env = false')
+    expect(read_initializer).to include('# config.dev_port_range = 3000..3999')
+    expect(read_initializer).not_to include("config.workspace_root = File.expand_path('~/Sites/conductor/workspaces')")
+  end
+
+  it 'creates a Procfile.dev example with the DEV_PORT-aware web entry' do
+    run_generator
+
+    expect(read_procfile_worktree_example)
+      .to include('web: env RUBY_DEBUG_OPEN=true bin/rails server -b 0.0.0.0 -p ${DEV_PORT:-3000}')
+  end
+
+  it 'writes the conductor workspace override when requested' do
+    run_generator('--conductor')
+
+    expect(read_initializer).to include("config.workspace_root = File.expand_path('~/Sites/conductor/workspaces')")
+  end
+
+  it 'patches a fresh Rails sqlite database.yml layout' do
+    write_database_yml(
+      "development:\n  database: storage/development.sqlite3\n\ntest:\n  database: storage/test.sqlite3\n"
+    )
+    run_generator
+
+    expect(read_database_yml).to include("storage/development#{suffix}.sqlite3")
+    expect(read_database_yml).to include("storage/test#{suffix}.sqlite3")
+  end
+
+  describe 'follow-up message' do
+    it 'displays a bordered follow-up with installed files and next steps' do
+      output = capture_generator_output
+
+      expect(output).to include('============================================')
+      expect(output).to include('rails-worktrees installed successfully!')
+      expect(output).to include('bin/wt')
+      expect(output).to include('config/initializers/rails_worktrees.rb')
+      expect(output).to include('Procfile.dev.worktree.example')
+      expect(output).to include('$ bin/wt')
+      expect(output).to include('$ bin/wt my-feature')
+    end
+
+    it 'includes a database note when database.yml was updated' do
+      output = capture_generator_output
+
+      expect(output).to include('config/database.yml (updated with WORKTREE_DATABASE_SUFFIX)')
+    end
+
+    it 'suggests loading .env automatically when mise.toml is present without _.file' do
+      write_mise_toml(<<~TOML)
+        [tools]
+        ruby = "3.4.8"
+
+        [env]
+        _.path = ["{{cwd}}/bin"]
+      TOML
+
+      output = capture_generator_output
+
+      expect(output).to include('Detected mise.toml.')
+      expect(output).to include('_.file = ".env"')
+    end
+
+    it 'omits the mise hint when mise.toml already loads .env' do
+      write_mise_toml(<<~TOML)
+        [tools]
+        ruby = "3.4.8"
+
+        [env]
+        _.path = ["{{cwd}}/bin"]
+        _.file = ".env"
+      TOML
+
+      output = capture_generator_output
+
+      expect(output).not_to include('Detected mise.toml.')
+    end
+
+    it 'omits the database note when database.yml was already identical' do
+      write_database_yml(
+        "development:\n  database: app_development<%= ENV.fetch('WORKTREE_DATABASE_SUFFIX', '') %>\n"
+      )
+      output = capture_generator_output
+
+      expect(output).not_to include('config/database.yml')
+    end
+
+    it 'includes a not-found note when database.yml is missing' do
+      FileUtils.rm_f(File.join(tmpdir, 'config/database.yml'))
+      output = capture_generator_output
+
+      expect(output).to include('config/database.yml was not found')
+    end
+  end
+end

@@ -1,0 +1,126 @@
+name: Smoke Test
+
+concurrency:
+  group: smoke-test-${{ github.ref }}-${{ inputs.ruby_version || '3.4' }}-${{ inputs.rails_version || '8.0.5' }}
+  cancel-in-progress: false
+
+on:
+  workflow_dispatch:
+    inputs:
+      ruby_version:
+        description: Ruby version to use for the smoke test job
+        required: false
+        default: '3.4'
+        type: string
+      rails_version:
+        description: Rails version to use for the disposable app smoke test
+        required: false
+        default: '8.0.5'
+        type: string
+      keep_artifacts:
+        description: Keep and upload disposable app artifacts for debugging
+        required: false
+        default: false
+        type: boolean
+      verbose:
+        description: Enable shell tracing in the smoke test script
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  smoke-test:
+    runs-on: ubuntu-latest
+    name: Ruby ${{ inputs.ruby_version }} / Rails ${{ inputs.rails_version }}
+    env:
+      RAILS_WORKTREES_SMOKE_RAILS_VERSION: ${{ inputs.rails_version }}
+      KEEP_SMOKE_TEST_ARTIFACTS: ${{ inputs.keep_artifacts && '1' || '0' }}
+      RAILS_WORKTREES_SMOKE_VERBOSE: ${{ inputs.verbose && '1' || '0' }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ${{ inputs.ruby_version }}
+          bundler-cache: true
+
+      - name: Install smoke test Rails version
+        run: gem install rails -v "$RAILS_WORKTREES_SMOKE_RAILS_VERSION" --no-document
+
+      - name: Run smoke test
+        env:
+          RAILS_WORKTREES_SMOKE_INFO_FILE: ${{ runner.temp }}/rails-worktrees-smoke-info.env
+        run: bundle exec rake smoke_test
+
+      - name: Summarize smoke test
+        if: ${{ always() }}
+        run: |
+          export RAILS_WORKTREES_SMOKE_INFO_FILE="$RUNNER_TEMP/rails-worktrees-smoke-info.env"
+
+          if [[ ! -f "$RAILS_WORKTREES_SMOKE_INFO_FILE" ]]; then
+            exit 0
+          fi
+
+          source "$RAILS_WORKTREES_SMOKE_INFO_FILE"
+
+          {
+            echo "## Smoke test run"
+            echo
+            echo "- Ruby: \`${{ inputs.ruby_version }}\`"
+            echo "- Rails: \`${RAILS_VERSION}\`"
+            echo "- Status: \`${STATUS}\`"
+            echo "- Verbose: \`${VERBOSE}\`"
+            echo "- App dir: \`${APP_DIR}\`"
+            echo "- Origin dir: \`${ORIGIN_ROOT}\`"
+            echo "- Workspaces root: \`${WORKSPACES_ROOT}\`"
+            echo "- Expected worktree: \`${EXPECTED_WORKTREE}\`"
+            echo "- Keep artifacts: \`${{ inputs.keep_artifacts }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Archive smoke test artifacts
+        if: ${{ always() && inputs.keep_artifacts }}
+        run: |
+          export RAILS_WORKTREES_SMOKE_INFO_FILE="$RUNNER_TEMP/rails-worktrees-smoke-info.env"
+
+          if [[ ! -f "$RAILS_WORKTREES_SMOKE_INFO_FILE" ]]; then
+            echo "Smoke test info file not found; skipping artifact archive."
+            exit 0
+          fi
+
+          source "$RAILS_WORKTREES_SMOKE_INFO_FILE"
+
+          artifact_paths=()
+          for path in "$APP_DIR" "$ORIGIN_ROOT" "$WORKSPACES_ROOT"; do
+            if [[ -d "$path" ]]; then
+              real_path="$(cd "$path" && pwd)"
+              if [[ "$real_path" != /tmp/* ]]; then
+                echo "Warning: $real_path is not under /tmp; skipping."
+                continue
+              fi
+              artifact_paths+=("$real_path")
+            fi
+          done
+
+          if [[ ${#artifact_paths[@]} -eq 0 ]]; then
+            echo "No smoke test directories found; skipping artifact archive."
+            exit 0
+          fi
+
+          tar -czf "$RUNNER_TEMP/rails-worktrees-smoke-artifacts.tgz" \
+            "${artifact_paths[@]}"
+
+      - name: Upload smoke test artifacts
+        if: ${{ always() && inputs.keep_artifacts }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-test-ruby-${{ inputs.ruby_version }}-rails-${{ inputs.rails_version }}
+          path: |
+            ${{ runner.temp }}/rails-worktrees-smoke-info.env
+            ${{ runner.temp }}/rails-worktrees-smoke-artifacts.tgz
+          if-no-files-found: warn

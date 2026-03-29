@@ -14,3 +14,17 @@ Bundler/OrderedGems:
 Style/StringLiterals:
   Description: Checks if uses of quotes match the configured preference.
   EnforcedStyle: single_quotes
+
+Metrics/AbcSize:
+  Exclude:
+    - 'spec/**/*'
+
+Metrics/MethodLength:
+  Exclude:
+    - 'spec/**/*'
+
+RSpec/MultipleExpectations:
+  Enabled: false
+
+RSpec/ExampleLength:
+  Max: 15

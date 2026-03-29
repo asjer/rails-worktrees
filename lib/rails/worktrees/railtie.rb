@@ -2,6 +2,7 @@
 
 module Rails
   module Worktrees
-    VERSION = '0.0.0'
+    class Railtie < ::Rails::Railtie
+    end
   end
 end
