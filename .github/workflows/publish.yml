@@ -1,0 +1,22 @@
+name: Publish to RubyGems
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.4"
+      - uses: rubygems/configure-rubygems-credentials@v1.0.0
+      - name: Build and publish gem
+        run: |
+          gem build rails-worktrees.gemspec
+          gem push *.gem

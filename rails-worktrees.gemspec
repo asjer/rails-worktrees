@@ -8,13 +8,13 @@ Gem::Specification.new do |spec|
   spec.authors = ['Asjer Querido']
   spec.email = ['asjer@johnyontherun.com']
 
-  spec.summary = 'TODO: Write a short summary, because RubyGems requires one.'
-  spec.description = 'TODO: Write a longer description or delete this line.'
+  spec.summary = 'Helpers for managing Rails application git worktrees.'
+  spec.description = 'Rails::Worktrees is a Ruby gem intended to support working with ' \
+                     'git worktrees in Rails development workflows.'
   spec.homepage = 'https://github.com/asjer/rails-worktrees'
   spec.license = 'MIT'
   spec.required_ruby_version = '>= 3.2.0'
 
-  spec.metadata['allowed_push_host'] = "TODO: Set to your gem server 'https://example.com'"
   spec.metadata['homepage_uri'] = spec.homepage
   spec.metadata['source_code_uri'] = 'https://github.com/asjer/rails-worktrees'
   spec.metadata['changelog_uri'] = 'https://github.com/asjer/rails-worktrees/blob/main/CHANGELOG.md'
@@ -26,6 +26,7 @@ Gem::Specification.new do |spec|
   spec.files = IO.popen(%w[git ls-files -z], chdir: __dir__, err: IO::NULL) do |ls|
     ls.readlines("\x0", chomp: true).reject do |f|
       (f == gemspec) ||
+        f.end_with?('.gem') ||
         f.start_with?(*%w[bin/ Gemfile .gitignore .rspec spec/ .github/ .rubocop.yml])
     end
   end

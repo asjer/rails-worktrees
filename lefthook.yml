@@ -1,0 +1,5 @@
+remotes:
+  - git_url: https://github.com/asjer/lefthook-configs
+    refetch_frequency: 24h
+    configs: 
+      lefthook-gem.yml

@@ -1,0 +1,11 @@
+{
+  "include-component-in-tag": false,
+  "packages": {
+    ".": {
+      "release-type": "ruby",
+      "package-name": "rails-worktrees",
+      "version-file": "lib/rails/worktrees/version.rb",
+      "changelog-path": "CHANGELOG.md"
+    }
+  }
+}
