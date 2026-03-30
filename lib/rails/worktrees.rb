@@ -14,7 +14,8 @@ module Rails
   module Worktrees
     class Error < StandardError; end
 
-    INSTALL_GENERATOR_COMMAND = 'bin/rails generate rails:worktrees:install'
+    INSTALL_GENERATOR_COMMAND = 'bin/rails generate worktrees:install'
+    INSTALL_GENERATOR_NAMES = %w[worktrees:install].freeze
     REQUIRED_INSTALLATION_PATHS = [
       'bin/wt',
       'config/initializers/rails_worktrees.rb'
@@ -76,8 +77,10 @@ module Rails
       def install_generator_invocation?(argv)
         normalized_args = Array(argv).map(&:to_s)
 
-        normalized_args.include?('rails:worktrees:install') ||
-          normalized_args.each_cons(2).any? { |left, right| left == 'generate' && right == 'rails:worktrees:install' }
+        INSTALL_GENERATOR_NAMES.any? do |generator_name|
+          normalized_args.include?(generator_name) ||
+            normalized_args.each_cons(2).any? { |left, right| left == 'generate' && right == generator_name }
+        end
       end
 
       def required_installation_paths(root)

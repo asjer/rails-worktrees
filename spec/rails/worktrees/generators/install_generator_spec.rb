@@ -4,9 +4,9 @@ require 'fileutils'
 require 'tmpdir'
 
 require 'rails/worktrees'
-require 'generators/rails/worktrees/install_generator'
+require 'generators/worktrees/install/install_generator'
 
-RSpec.describe Rails::Worktrees::Generators::InstallGenerator do
+RSpec.describe Worktrees::Generators::InstallGenerator do
   let(:tmpdir) { Dir.mktmpdir('rails-worktrees-generator-spec') }
 
   around do |example|
@@ -166,6 +166,16 @@ RSpec.describe Rails::Worktrees::Generators::InstallGenerator do
       output = capture_generator_output
 
       expect(output).to include('config/database.yml was not found')
+    end
+  end
+
+  describe 'generator metadata' do
+    it 'uses the shorter generator namespace' do
+      expect(described_class.namespace).to eq('worktrees:install')
+    end
+
+    it 'points at the shared templates directory' do
+      expect(described_class.source_root).to end_with('/lib/generators/rails/worktrees/templates')
     end
   end
 end

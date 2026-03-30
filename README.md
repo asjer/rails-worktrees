@@ -12,7 +12,7 @@
 
 ```bash
 bundle add rails-worktrees
-bin/rails generate rails:worktrees:install
+bin/rails generate worktrees:install
 ```
 
 The installer adds:
@@ -141,7 +141,7 @@ This smoke test:
 
 - creates a temporary Rails app from a compatible Rails version
 - installs `rails-worktrees` from the current checkout path
-- runs `bin/rails generate rails:worktrees:install`
+- runs `bin/rails generate worktrees:install`
 - verifies `bin/wt`, the generated initializer, the Procfile example, `config/database.yml` patching, and worktree `.env` bootstrapping
 - creates a temporary bare `origin` and confirms `bin/wt smoke-branch` creates a real worktree
 
