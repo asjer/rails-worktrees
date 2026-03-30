@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/asjer/rails-worktrees/compare/v0.2.2...v0.3.0) (2026-03-30)
+
+
+### Features
+
+* **ob:** add `bin/ob` cli for opening `localhost:$DEV_PORT` routes in the browser ([1c94ade](https://github.com/asjer/rails-worktrees/commit/1c94adebd338cfe6e344095f3d6df089570f1e82))
+
 ## [0.2.2](https://github.com/asjer/rails-worktrees/compare/v0.2.1...v0.2.2) (2026-03-30)
 
 
