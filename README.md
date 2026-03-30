@@ -13,6 +13,8 @@
 ```bash
 bundle add rails-worktrees
 bin/rails generate worktrees:install
+# or, to apply the common Procfile.dev + mise follow-ups automatically:
+bin/rails generate worktrees:install --yolo
 ```
 
 The installer adds:
@@ -21,6 +23,11 @@ The installer adds:
 - `config/initializers/rails_worktrees.rb` — optional configuration
 - `Procfile.dev.worktree.example` — a copy-paste helper for `${DEV_PORT:-3000}` in `Procfile.dev`
 - a safe update to `config/database.yml` for common development/test database names
+
+With `--yolo`, the installer also:
+
+- replaces the existing `web:` entry in `Procfile.dev` with the DEV_PORT-aware command when `Procfile.dev` already exists
+- updates `mise.toml` or `.mise.toml` to load `.env` from `[env]` when either file already exists
 
 ## Usage
 
@@ -115,11 +122,16 @@ When `bin/wt` creates a worktree it writes a worktree-local `.env` with:
 
 Existing `.env` values are never overwritten.
 
-The gem does **not** edit your `Procfile.dev` or add dotenv. The installer generates `Procfile.dev.worktree.example` with a ready-to-copy line:
+By default, the installer does **not** edit your `Procfile.dev` or `mise` config. It generates `Procfile.dev.worktree.example` with a ready-to-copy line:
 
 ```text
 web: env RUBY_DEBUG_OPEN=true bin/rails server -b 0.0.0.0 -p ${DEV_PORT:-3000}
 ```
+
+If you run `bin/rails generate worktrees:install --yolo`, the installer applies the two common follow-ups for you when the files already exist:
+
+- replace the existing `web:` entry in `Procfile.dev`
+- add `_.file = ".env"` to the `[env]` section of `mise.toml` or `.mise.toml`
 
 Use a project-local env loader like `mise` with `_.file = ".env"` to keep values scoped per-worktree.
 
@@ -141,8 +153,8 @@ This smoke test:
 
 - creates a temporary Rails app from a compatible Rails version
 - installs `rails-worktrees` from the current checkout path
-- runs `bin/rails generate worktrees:install`
-- verifies `bin/wt`, the generated initializer, the Procfile example, `config/database.yml` patching, and worktree `.env` bootstrapping
+- runs `bin/rails generate worktrees:install --yolo`
+- verifies `bin/wt`, the generated initializer, the Procfile example, yolo updates to `Procfile.dev` and `mise.toml`, `config/database.yml` patching, and worktree `.env` bootstrapping
 - creates a temporary bare `origin` and confirms `bin/wt smoke-branch` creates a real worktree
 
 By default, the script cleans up all temp directories after the run. Set `KEEP_SMOKE_TEST_ARTIFACTS=1` to keep them around for debugging, or set `RAILS_WORKTREES_SMOKE_RAILS_VERSION` to try a different compatible Rails version.

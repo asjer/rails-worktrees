@@ -33,25 +33,54 @@ RSpec.describe Worktrees::Generators::InstallGenerator do
     File.read(File.join(tmpdir, 'Procfile.dev.worktree.example'))
   end
 
+  def read_procfile_dev
+    File.read(File.join(tmpdir, 'Procfile.dev'))
+  end
+
   def write_mise_toml(content)
     File.write(File.join(tmpdir, 'mise.toml'), content)
+  end
+
+  def write_dot_mise_toml(content)
+    File.write(File.join(tmpdir, '.mise.toml'), content)
+  end
+
+  def write_procfile_dev(content)
+    File.write(File.join(tmpdir, 'Procfile.dev'), content)
+  end
+
+  def expect_standard_procfile_dev
+    expect(read_procfile_dev).to eq(<<~PROCFILE)
+      web: env RUBY_DEBUG_OPEN=true bin/rails server -b 0.0.0.0 -p ${DEV_PORT:-3000}
+      js: yarn build --watch
+    PROCFILE
+  end
+
+  def expect_standard_mise_toml(path = 'mise.toml')
+    expect(File.read(File.join(tmpdir, path))).to eq(<<~TOML)
+      [tools]
+      ruby = "3.4.8"
+
+      [env]
+      _.file = ".env"
+    TOML
   end
 
   def run_generator(*args)
     described_class.start(args, destination_root: tmpdir)
   end
 
-  def capture_generator_output
+  def capture_generator_output(*args)
     output = +''
-    allow(described_class).to receive(:new).and_wrap_original do |original, *args, **kwargs|
-      generator = original.call(*args, **kwargs)
+    allow(described_class).to receive(:new).and_wrap_original do |original, *generator_args, **kwargs|
+      generator = original.call(*generator_args, **kwargs)
       allow(generator).to receive(:say).and_wrap_original do |orig_say, *say_args|
         output << say_args.first.to_s << "\n"
         orig_say.call(*say_args)
       end
       generator
     end
-    run_generator
+    run_generator(*args)
     output
   end
 
@@ -84,6 +113,83 @@ RSpec.describe Worktrees::Generators::InstallGenerator do
 
     expect(read_procfile_worktree_example)
       .to include('web: env RUBY_DEBUG_OPEN=true bin/rails server -b 0.0.0.0 -p ${DEV_PORT:-3000}')
+  end
+
+  describe '--yolo' do
+    it 'rewrites an existing Procfile.dev web entry with the standard DEV_PORT-aware command' do
+      write_procfile_dev(<<~PROCFILE)
+        web: bin/rails server
+        js: yarn build --watch
+      PROCFILE
+
+      run_generator('--yolo')
+
+      expect(read_procfile_dev).to eq(<<~PROCFILE)
+        web: env RUBY_DEBUG_OPEN=true bin/rails server -b 0.0.0.0 -p ${DEV_PORT:-3000}
+        js: yarn build --watch
+      PROCFILE
+    end
+
+    it 'inserts _.file into an existing [env] section in mise.toml' do
+      write_mise_toml(<<~TOML)
+        [tools]
+        ruby = "3.4.8"
+
+        [env]
+        _.path = ["{{cwd}}/bin"]
+      TOML
+
+      run_generator('--yolo')
+
+      expect(File.read(File.join(tmpdir, 'mise.toml'))).to eq(<<~TOML)
+        [tools]
+        ruby = "3.4.8"
+
+        [env]
+        _.path = ["{{cwd}}/bin"]
+        _.file = ".env"
+      TOML
+    end
+
+    it 'adds a new [env] section to .mise.toml when needed' do
+      write_dot_mise_toml(<<~TOML)
+        [tools]
+        ruby = "3.4.8"
+      TOML
+
+      run_generator('--yolo')
+
+      expect_standard_mise_toml('.mise.toml')
+    end
+
+    it 'reports skips instead of creating Procfile.dev or mise config files' do
+      output = capture_generator_output('--yolo')
+
+      expect(File.exist?(File.join(tmpdir, 'Procfile.dev'))).to be(false)
+      expect(File.exist?(File.join(tmpdir, 'mise.toml'))).to be(false)
+      expect(File.exist?(File.join(tmpdir, '.mise.toml'))).to be(false)
+      expect(output).to include('Skipped Procfile.dev yolo update because the file does not exist yet.')
+      expect(output).to include('Skipped mise yolo update because no supported mise config file was found.')
+    end
+
+    it 'is idempotent on rerun once Procfile.dev and mise.toml are already configured' do
+      write_procfile_dev(<<~PROCFILE)
+        web: bin/rails server
+        js: yarn build --watch
+      PROCFILE
+      write_mise_toml(<<~TOML)
+        [tools]
+        ruby = "3.4.8"
+      TOML
+
+      run_generator('--yolo')
+      output = capture_generator_output('--yolo')
+
+      expect_standard_procfile_dev
+      expect_standard_mise_toml
+      expect(output).to include('Procfile.dev already uses the DEV_PORT-aware web entry.')
+      expect(output).to include('mise.toml already loads .env from [env].')
+    end
   end
 
   it 'writes the conductor workspace override when requested' do
@@ -136,6 +242,18 @@ RSpec.describe Worktrees::Generators::InstallGenerator do
       expect(output).to include('_.file = ".env"')
     end
 
+    it 'suggests loading .env automatically when .mise.toml is present without _.file' do
+      write_dot_mise_toml(<<~TOML)
+        [tools]
+        ruby = "3.4.8"
+      TOML
+
+      output = capture_generator_output
+
+      expect(output).to include('Detected .mise.toml.')
+      expect(output).to include('_.file = ".env"')
+    end
+
     it 'omits the mise hint when mise.toml already loads .env' do
       write_mise_toml(<<~TOML)
         [tools]
@@ -149,6 +267,33 @@ RSpec.describe Worktrees::Generators::InstallGenerator do
       output = capture_generator_output
 
       expect(output).not_to include('Detected mise.toml.')
+    end
+
+    it 'omits the mise hint when mise.toml loads .env with an inline comment' do
+      write_mise_toml(<<~TOML)
+        [tools]
+        ruby = "3.4.8"
+
+        [env]
+        _.path = ["{{cwd}}/bin"]
+        _.file = ".env" # load worktree env
+      TOML
+
+      output = capture_generator_output
+
+      expect(output).not_to include('Detected mise.toml.')
+    end
+
+    it 'omits the mise hint after --yolo updates mise.toml automatically' do
+      write_mise_toml(<<~TOML)
+        [tools]
+        ruby = "3.4.8"
+      TOML
+
+      output = capture_generator_output('--yolo')
+
+      expect(output).not_to include('Detected mise.toml.')
+      expect(output).to include('Configured mise.toml to load .env from [env].')
     end
 
     it 'omits the database note when database.yml was already identical' do
