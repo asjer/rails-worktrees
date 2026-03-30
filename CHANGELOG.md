@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.2](https://github.com/asjer/rails-worktrees/compare/v0.2.1...v0.2.2) (2026-03-30)
+
+
+### Bug Fixes
+
+* **yolo:** skip generating `Procfile.dev.worktree.example` in --yolo mode ([b2320be](https://github.com/asjer/rails-worktrees/commit/b2320be92c84bfdcbb4f781fb34fc079df09f0b1))
+
 ## [0.2.1](https://github.com/asjer/rails-worktrees/compare/v0.2.0...v0.2.1) (2026-03-30)
 
 
