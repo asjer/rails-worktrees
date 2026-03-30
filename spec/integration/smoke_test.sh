@@ -13,6 +13,7 @@ ORIGIN_ROOT="$(mktemp -d /tmp/rails-worktrees-origin.XXXXXX)"
 WORKSPACES_ROOT="$(mktemp -d /tmp/rails-worktrees-workspaces.XXXXXX)"
 APP_NAME="$(basename "$APP_DIR")"
 EXPECTED_WORKTREE="$WORKSPACES_ROOT/$APP_NAME/smoke-branch"
+RUNNER_WORKTREE="$WORKSPACES_ROOT/$APP_NAME/runner"
 
 say() {
   printf '→ %s\n' "$*"
@@ -171,5 +172,36 @@ grep -Fq "http://localhost:$ACTUAL_DEV_PORT/contact?from=nav" < <(printf '%s\n' 
 
 grep -Fq "$EXPECTED_WORKTREE" < <(git worktree list) || fail 'Expected git worktree list to include the created worktree'
 
+say 'Creating a sibling runner worktree'
+RUNNER_OUTPUT="$(WT_WORKSPACES_ROOT="$WORKSPACES_ROOT" bin/wt runner)"
+printf '%s\n' "$RUNNER_OUTPUT"
+
+[[ -d "$RUNNER_WORKTREE" ]] || fail "Expected runner worktree at $RUNNER_WORKTREE"
+[[ "$(git -C "$RUNNER_WORKTREE" branch --show-current)" == '🚂/runner' ]] || fail 'Expected runner worktree branch to be 🚂/runner'
+
+say 'Committing and merging the smoke worktree branch'
+printf 'smoke removal\n' >"$EXPECTED_WORKTREE/tmp_remove.txt"
+git -C "$EXPECTED_WORKTREE" add tmp_remove.txt
+GIT_AUTHOR_NAME='Smoke Test' \
+  GIT_AUTHOR_EMAIL='smoke@example.com' \
+  GIT_COMMITTER_NAME='Smoke Test' \
+  GIT_COMMITTER_EMAIL='smoke@example.com' \
+  git -C "$EXPECTED_WORKTREE" -c commit.gpgSign=false commit -m 'Smoke branch change'
+git merge --no-ff '🚂/smoke-branch' -m 'Merge smoke branch'
+git push origin main
+
+say 'Removing the merged smoke worktree from the sibling runner worktree'
+REMOVE_OUTPUT="$(cd "$RUNNER_WORKTREE" && WT_WORKSPACES_ROOT="$WORKSPACES_ROOT" bin/wt remove smoke-branch)"
+printf '%s\n' "$REMOVE_OUTPUT"
+
+[[ ! -d "$EXPECTED_WORKTREE" ]] || fail 'Expected wt remove to delete the smoke worktree directory'
+if git show-ref --verify --quiet 'refs/heads/🚂/smoke-branch'; then
+  fail 'Expected wt remove to delete the local smoke branch'
+fi
+grep -Fq "$RUNNER_WORKTREE" < <(git worktree list) || fail 'Expected git worktree list to keep the runner worktree'
+if grep -Fq "$EXPECTED_WORKTREE" < <(git worktree list); then
+  fail 'Expected git worktree list to stop listing the removed smoke worktree'
+fi
+
 printf '✅ Smoke test passed\n'
-printf 'App template: %s\nWorktree: %s\n' "$APP_DIR" "$EXPECTED_WORKTREE"
+printf 'App template: %s\nWorktree: %s\n' "$APP_DIR" "$RUNNER_WORKTREE"
