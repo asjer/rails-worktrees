@@ -3,10 +3,13 @@ require 'rails/generators'
 
 require_relative '../../rails/worktrees/mise_follow_up'
 require_relative '../../../rails/worktrees/database_config_updater'
+require_relative '../../../rails/worktrees/procfile_updater'
+require_relative '../../../rails/worktrees/mise_toml_updater'
 
 module Worktrees
   module Generators
     # Installs the wt wrapper, configuration, and safe database.yml updates.
+    # rubocop:disable Metrics/ClassLength
     class InstallGenerator < ::Rails::Generators::Base
       include ::Rails::Worktrees::Generators::MiseFollowUp
 
@@ -15,6 +18,8 @@ module Worktrees
       source_root File.expand_path('../../rails/worktrees/templates', __dir__)
       class_option :conductor, type: :boolean, default: false,
                                desc: 'Configure the installer for ~/Sites/conductor/workspaces'
+      class_option :yolo, type: :boolean, default: false,
+                          desc: 'Apply common Procfile.dev and mise .env follow-up edits when safe'
 
       FOLLOW_UP_TEMPLATE = <<~TEXT.freeze
           ============================================
@@ -46,6 +51,13 @@ module Worktrees
         template('Procfile.dev.worktree.example.tt', 'Procfile.dev.worktree.example')
       end
 
+      def apply_yolo_follow_ups
+        return unless options[:yolo]
+
+        update_procfile
+        update_mise_toml
+      end
+
       def update_database_configuration
         unless File.exist?(database_config_path)
           say_status(:skip, 'config/database.yml not found', :yellow)
@@ -74,6 +86,17 @@ module Worktrees
 
       def database_config_path
         File.join(destination_root, 'config/database.yml')
+      end
+
+      def procfile_path
+        File.join(destination_root, 'Procfile.dev')
+      end
+
+      def mise_toml_paths
+        [
+          File.join(destination_root, 'mise.toml'),
+          File.join(destination_root, '.mise.toml')
+        ]
       end
 
       def database_update_result
@@ -117,6 +140,51 @@ module Worktrees
         result.messages.each { |message| say(message) }
       end
 
+      def update_procfile
+        unless File.exist?(procfile_path)
+          say_status(:skip, 'Procfile.dev not found', :yellow)
+          say('Skipped Procfile.dev yolo update because the file does not exist yet.')
+          return
+        end
+
+        result = ::Rails::Worktrees::ProcfileUpdater.new(content: File.read(procfile_path)).call
+        File.write(procfile_path, result.content) if result.changed?
+        announce_updater_result('Procfile.dev', result)
+      end
+
+      def update_mise_toml
+        path = first_mise_toml_path
+        return announce_missing_mise_toml unless path
+
+        result = ::Rails::Worktrees::MiseTomlUpdater.new(
+          content: File.read(path),
+          file_name: File.basename(path)
+        ).call
+
+        File.write(path, result.content) if result.changed?
+        announce_updater_result(File.basename(path), result)
+      end
+
+      def announce_updater_result(path, result)
+        status, color = case result.status
+                        when :updated then %i[update green]
+                        when :identical then %i[identical blue]
+                        else %i[skip yellow]
+                        end
+
+        say_status(status, path, color)
+        result.messages.each { |message| say(message) }
+      end
+
+      def first_mise_toml_path
+        mise_toml_paths.find { |candidate| File.file?(candidate) }
+      end
+
+      def announce_missing_mise_toml
+        say_status(:skip, 'mise.toml/.mise.toml not found', :yellow)
+        say('Skipped mise yolo update because no supported mise config file was found.')
+      end
+
       def git_repo?
         _stdout_str, _stderr_str, status = Open3.capture3(
           'git', 'rev-parse', '--is-inside-work-tree', chdir: destination_root
@@ -130,5 +198,6 @@ module Worktrees
         "File.expand_path('~/Sites/conductor/workspaces')"
       end
     end
+    # rubocop:enable Metrics/ClassLength
   end
 end

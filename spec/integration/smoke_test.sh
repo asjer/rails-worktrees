@@ -91,8 +91,19 @@ cd "$APP_DIR"
 say 'Installing app dependencies'
 bundle install
 
-say 'Running rails-worktrees installer'
-bundle exec rails generate worktrees:install
+say 'Writing sample Procfile.dev and mise.toml for installer yolo mode'
+cat >Procfile.dev <<'EOF'
+web:
+js: yarn build --watch
+EOF
+
+cat >mise.toml <<'EOF'
+[tools]
+ruby = "3.4.8"
+EOF
+
+say 'Running rails-worktrees installer with --yolo'
+bundle exec rails generate worktrees:install --yolo
 
 [[ -x bin/wt ]] || fail 'Expected bin/wt to exist and be executable'
 [[ -f config/initializers/rails_worktrees.rb ]] || fail 'Expected config/initializers/rails_worktrees.rb to exist'
@@ -101,6 +112,10 @@ grep -Fq "development<%= ENV.fetch('WORKTREE_DATABASE_SUFFIX', '') %>" config/da
 grep -Fq "test<%= ENV.fetch('WORKTREE_DATABASE_SUFFIX', '') %>" config/database.yml || fail 'Expected test database name to include WORKTREE_DATABASE_SUFFIX'
 grep -Eq '^wt [0-9]+\.[0-9]+\.[0-9]+' < <(bin/wt --version) || fail 'Expected bin/wt --version to return a semantic version'
 grep -Fq 'web: env RUBY_DEBUG_OPEN=true bin/rails server -b 0.0.0.0 -p ${DEV_PORT:-3000}' Procfile.dev.worktree.example || fail 'Expected Procfile.dev.worktree.example to include the DEV_PORT-aware web entry'
+grep -Fq 'web: env RUBY_DEBUG_OPEN=true bin/rails server -b 0.0.0.0 -p ${DEV_PORT:-3000}' Procfile.dev || fail 'Expected Procfile.dev to include the DEV_PORT-aware web entry after --yolo'
+grep -Fq 'js: yarn build --watch' Procfile.dev || fail 'Expected Procfile.dev to preserve non-web entries after --yolo'
+grep -Fq '[env]' mise.toml || fail 'Expected mise.toml to include an [env] section after --yolo'
+grep -Fq '_.file = ".env"' mise.toml || fail 'Expected mise.toml to load .env after --yolo'
 
 say 'Creating temporary bare origin and pushing main'
 git init --bare --initial-branch=main "$ORIGIN_ROOT/origin.git"

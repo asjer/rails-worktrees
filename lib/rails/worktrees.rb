@@ -6,6 +6,8 @@ require_relative 'worktrees/env_bootstrapper'
 require_relative 'worktrees/command'
 require_relative 'worktrees/cli'
 require_relative 'worktrees/database_config_updater'
+require_relative 'worktrees/procfile_updater'
+require_relative 'worktrees/mise_toml_updater'
 
 module Rails
   # Rails-specific git worktree helpers and installer support.
