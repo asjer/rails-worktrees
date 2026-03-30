@@ -28,7 +28,9 @@ jobs:
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: "3.4"
-          bundler-cache: true
+
+      - name: Install gems
+        run: bundle install --jobs 4 --retry 3
 
       - name: Prepare RuboCop cache
         uses: actions/cache@v5
@@ -64,7 +66,9 @@ jobs:
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: ${{ matrix.ruby }}
-          bundler-cache: true
+
+      - name: Install gems
+        run: bundle install --jobs 4 --retry 3
 
       - name: Run RSpec tests
         run: bundle exec rspec

@@ -48,7 +48,9 @@ jobs:
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: ${{ inputs.ruby_version }}
-          bundler-cache: true
+
+      - name: Install gems
+        run: bundle install --jobs 4 --retry 3
 
       - name: Install smoke test Rails version
         run: gem install rails -v "$RAILS_WORKTREES_SMOKE_RAILS_VERSION" --no-document
