@@ -21,11 +21,12 @@ The installer adds:
 
 - `bin/wt` — a thin wrapper that executes the gem-owned CLI
 - `config/initializers/rails_worktrees.rb` — optional configuration
-- `Procfile.dev.worktree.example` — a copy-paste helper for `${DEV_PORT:-3000}` in `Procfile.dev`
+- `Procfile.dev.worktree.example` — a copy-paste helper for `${DEV_PORT:-3000}` in `Procfile.dev` on regular installs
 - a safe update to `config/database.yml` for common development/test database names
 
 With `--yolo`, the installer also:
 
+- skips `Procfile.dev.worktree.example`
 - replaces the existing `web:` entry in `Procfile.dev` with the DEV_PORT-aware command when `Procfile.dev` already exists
 - updates `config/puma.rb` to use `port ENV['DEV_PORT'] || ENV.fetch('PORT', 3000)` when it still uses a supported default `PORT` binding
 - updates `mise.toml` or `.mise.toml` to load `.env` from `[env]` when either file already exists
@@ -131,6 +132,7 @@ web: env RUBY_DEBUG_OPEN=true bin/rails server -b 0.0.0.0 -p ${DEV_PORT:-3000}
 
 If you run `bin/rails generate worktrees:install --yolo`, the installer applies the three common follow-ups for you when the files already exist:
 
+- skip generating `Procfile.dev.worktree.example`
 - replace the existing `web:` entry in `Procfile.dev`
 - update `config/puma.rb` to `port ENV['DEV_PORT'] || ENV.fetch('PORT', 3000)` when it still uses a supported default `PORT` binding
 - add `_.file = ".env"` to the `[env]` section of `mise.toml` or `.mise.toml`
@@ -158,7 +160,7 @@ This smoke test:
 - creates a temporary Rails app from a compatible Rails version
 - installs `rails-worktrees` from the current checkout path
 - runs `bin/rails generate worktrees:install --yolo`
-- verifies `bin/wt`, the generated initializer, the Procfile example, yolo updates to `Procfile.dev`, `config/puma.rb`, and `mise.toml`, `config/database.yml` patching, and worktree `.env` bootstrapping
+- verifies `bin/wt`, the generated initializer, that `--yolo` skips the Procfile example, yolo updates to `Procfile.dev`, `config/puma.rb`, and `mise.toml`, `config/database.yml` patching, and worktree `.env` bootstrapping
 - creates a temporary bare `origin` and confirms `bin/wt smoke-branch` creates a real worktree
 
 By default, the script cleans up all temp directories after the run. Set `KEEP_SMOKE_TEST_ARTIFACTS=1` to keep them around for debugging, or set `RAILS_WORKTREES_SMOKE_RAILS_VERSION` to try a different compatible Rails version.

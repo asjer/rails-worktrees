@@ -146,6 +146,12 @@ RSpec.describe Worktrees::Generators::InstallGenerator do
   end
 
   describe '--yolo' do
+    it 'does not create Procfile.dev.worktree.example' do
+      run_generator('--yolo')
+
+      expect(File.exist?(File.join(tmpdir, 'Procfile.dev.worktree.example'))).to be(false)
+    end
+
     it 'rewrites an existing Procfile.dev web entry with the standard DEV_PORT-aware command' do
       write_procfile_dev(<<~PROCFILE)
         web: bin/rails server
@@ -154,6 +160,7 @@ RSpec.describe Worktrees::Generators::InstallGenerator do
 
       run_generator('--yolo')
 
+      expect(File.exist?(File.join(tmpdir, 'Procfile.dev.worktree.example'))).to be(false)
       expect(read_procfile_dev).to eq(<<~PROCFILE)
         web: env RUBY_DEBUG_OPEN=true bin/rails server -b 0.0.0.0 -p ${DEV_PORT:-3000}
         js: yarn build --watch
@@ -381,6 +388,12 @@ RSpec.describe Worktrees::Generators::InstallGenerator do
 
       expect(output).not_to include('Detected config/puma.rb.')
       expect(output).to include('Updated config/puma.rb to prefer DEV_PORT before PORT.')
+    end
+
+    it 'does not list Procfile.dev.worktree.example as installed in yolo mode' do
+      output = capture_generator_output('--yolo')
+
+      expect(output).not_to include('Procfile.dev.worktree.example')
     end
 
     it 'omits the database note when database.yml was already identical' do

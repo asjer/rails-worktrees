@@ -51,6 +51,8 @@ module Worktrees
       end
 
       def create_procfile_worktree_example
+        return if options[:yolo]
+
         template('Procfile.dev.worktree.example.tt', 'Procfile.dev.worktree.example')
       end
 
@@ -128,9 +130,9 @@ module Worktrees
       def installed_items_text
         items = [
           '      • bin/wt',
-          '      • config/initializers/rails_worktrees.rb',
-          '      • Procfile.dev.worktree.example'
+          '      • config/initializers/rails_worktrees.rb'
         ]
+        items << '      • Procfile.dev.worktree.example' unless options[:yolo]
         items << database_follow_up_line if database_follow_up_line
         items.join("\n")
       end

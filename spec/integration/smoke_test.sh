@@ -107,11 +107,10 @@ bundle exec rails generate worktrees:install --yolo
 
 [[ -x bin/wt ]] || fail 'Expected bin/wt to exist and be executable'
 [[ -f config/initializers/rails_worktrees.rb ]] || fail 'Expected config/initializers/rails_worktrees.rb to exist'
-[[ -f Procfile.dev.worktree.example ]] || fail 'Expected Procfile.dev.worktree.example to exist'
+[[ ! -f Procfile.dev.worktree.example ]] || fail 'Expected --yolo install not to create Procfile.dev.worktree.example'
 grep -Fq "development<%= ENV.fetch('WORKTREE_DATABASE_SUFFIX', '') %>" config/database.yml || fail 'Expected development database name to include WORKTREE_DATABASE_SUFFIX'
 grep -Fq "test<%= ENV.fetch('WORKTREE_DATABASE_SUFFIX', '') %>" config/database.yml || fail 'Expected test database name to include WORKTREE_DATABASE_SUFFIX'
 grep -Eq '^wt [0-9]+\.[0-9]+\.[0-9]+' < <(bin/wt --version) || fail 'Expected bin/wt --version to return a semantic version'
-grep -Fq 'web: env RUBY_DEBUG_OPEN=true bin/rails server -b 0.0.0.0 -p ${DEV_PORT:-3000}' Procfile.dev.worktree.example || fail 'Expected Procfile.dev.worktree.example to include the DEV_PORT-aware web entry'
 grep -Fq 'web: env RUBY_DEBUG_OPEN=true bin/rails server -b 0.0.0.0 -p ${DEV_PORT:-3000}' Procfile.dev || fail 'Expected Procfile.dev to include the DEV_PORT-aware web entry after --yolo'
 grep -Fq 'js: yarn build --watch' Procfile.dev || fail 'Expected Procfile.dev to preserve non-web entries after --yolo'
 grep -Fq "port ENV['DEV_PORT'] || ENV.fetch('PORT', 3000)" config/puma.rb || fail 'Expected config/puma.rb to prefer DEV_PORT after --yolo'
