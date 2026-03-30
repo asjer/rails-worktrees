@@ -1,3 +1,12 @@
+# Changelog
+
+## 0.1.0 (2026-03-30)
+
+
+### Features
+
+* add wt command and rails installer ([5d798d5](https://github.com/asjer/rails-worktrees/commit/5d798d5129585331780f0259b39061194feb66e3))
+
 ## [Unreleased]
 
 - Add a gem-managed `wt` CLI for creating Rails worktrees.
