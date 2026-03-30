@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.0](https://github.com/asjer/rails-worktrees/compare/v0.1.1...v0.2.0) (2026-03-30)
+
+
+### Features
+
+* add `--yolo` mode to install common follow-ups without manual edits ([1ec82ec](https://github.com/asjer/rails-worktrees/commit/1ec82ec83726b5ca9cbaee39697c607fdb825f26))
+
 ## [0.1.1](https://github.com/asjer/rails-worktrees/compare/v0.1.0...v0.1.1) (2026-03-30)
 
 
