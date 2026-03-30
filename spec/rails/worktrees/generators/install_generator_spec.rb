@@ -37,6 +37,10 @@ RSpec.describe Worktrees::Generators::InstallGenerator do
     File.read(File.join(tmpdir, 'Procfile.dev'))
   end
 
+  def read_puma_config
+    File.read(File.join(tmpdir, 'config/puma.rb'))
+  end
+
   def write_mise_toml(content)
     File.write(File.join(tmpdir, 'mise.toml'), content)
   end
@@ -47,6 +51,10 @@ RSpec.describe Worktrees::Generators::InstallGenerator do
 
   def write_procfile_dev(content)
     File.write(File.join(tmpdir, 'Procfile.dev'), content)
+  end
+
+  def write_puma_config(content)
+    File.write(File.join(tmpdir, 'config/puma.rb'), content)
   end
 
   def expect_standard_procfile_dev
@@ -64,6 +72,28 @@ RSpec.describe Worktrees::Generators::InstallGenerator do
       [env]
       _.file = ".env"
     TOML
+  end
+
+  def expect_standard_puma_config
+    expect(read_puma_config).to eq(<<~RUBY)
+      # Specifies the `port` that Puma will listen on to receive requests; default is 3000.
+      port ENV['DEV_PORT'] || ENV.fetch('PORT', 3000)
+    RUBY
+  end
+
+  def prepare_yolo_configured_files
+    write_procfile_dev(<<~PROCFILE)
+      web: bin/rails server
+      js: yarn build --watch
+    PROCFILE
+    write_mise_toml(<<~TOML)
+      [tools]
+      ruby = "3.4.8"
+    TOML
+    write_puma_config(<<~RUBY)
+      # Specifies the `port` that Puma will listen on to receive requests; default is 3000.
+      port ENV.fetch("PORT", 3000)
+    RUBY
   end
 
   def run_generator(*args)
@@ -151,6 +181,31 @@ RSpec.describe Worktrees::Generators::InstallGenerator do
       TOML
     end
 
+    it 'rewrites the current Rails puma port line to prefer DEV_PORT' do
+      write_puma_config(<<~RUBY)
+        # Specifies the `port` that Puma will listen on to receive requests; default is 3000.
+        port ENV.fetch("PORT", 3000)
+      RUBY
+
+      run_generator('--yolo')
+
+      expect_standard_puma_config
+    end
+
+    it 'rewrites older supported Rails puma port variants to prefer DEV_PORT' do
+      write_puma_config(<<~RUBY)
+        # Puma can serve each request in a thread from an internal thread pool.
+        port ENV.fetch("PORT") { 3000 }
+      RUBY
+
+      run_generator('--yolo')
+
+      expect(read_puma_config).to eq(<<~RUBY)
+        # Puma can serve each request in a thread from an internal thread pool.
+        port ENV['DEV_PORT'] || ENV.fetch('PORT', 3000)
+      RUBY
+    end
+
     it 'adds a new [env] section to .mise.toml when needed' do
       write_dot_mise_toml(<<~TOML)
         [tools]
@@ -166,28 +221,25 @@ RSpec.describe Worktrees::Generators::InstallGenerator do
       output = capture_generator_output('--yolo')
 
       expect(File.exist?(File.join(tmpdir, 'Procfile.dev'))).to be(false)
+      expect(File.exist?(File.join(tmpdir, 'config/puma.rb'))).to be(false)
       expect(File.exist?(File.join(tmpdir, 'mise.toml'))).to be(false)
       expect(File.exist?(File.join(tmpdir, '.mise.toml'))).to be(false)
       expect(output).to include('Skipped Procfile.dev yolo update because the file does not exist yet.')
+      expect(output).to include('Skipped config/puma.rb yolo update because the file does not exist yet.')
       expect(output).to include('Skipped mise yolo update because no supported mise config file was found.')
     end
 
     it 'is idempotent on rerun once Procfile.dev and mise.toml are already configured' do
-      write_procfile_dev(<<~PROCFILE)
-        web: bin/rails server
-        js: yarn build --watch
-      PROCFILE
-      write_mise_toml(<<~TOML)
-        [tools]
-        ruby = "3.4.8"
-      TOML
+      prepare_yolo_configured_files
 
       run_generator('--yolo')
       output = capture_generator_output('--yolo')
 
       expect_standard_procfile_dev
       expect_standard_mise_toml
+      expect_standard_puma_config
       expect(output).to include('Procfile.dev already uses the DEV_PORT-aware web entry.')
+      expect(output).to include('config/puma.rb already uses DEV_PORT-aware port binding.')
       expect(output).to include('mise.toml already loads .env from [env].')
     end
   end
@@ -254,6 +306,29 @@ RSpec.describe Worktrees::Generators::InstallGenerator do
       expect(output).to include('_.file = ".env"')
     end
 
+    it 'suggests making config/puma.rb prefer DEV_PORT when it uses the default port binding' do
+      write_puma_config(<<~RUBY)
+        # Specifies the `port` that Puma will listen on to receive requests; default is 3000.
+        port ENV.fetch("PORT", 3000)
+      RUBY
+
+      output = capture_generator_output
+
+      expect(output).to include('Detected config/puma.rb.')
+      expect(output).to include("port ENV['DEV_PORT'] || ENV.fetch('PORT', 3000)")
+    end
+
+    it 'omits the puma hint when config/puma.rb already prefers DEV_PORT' do
+      write_puma_config(<<~RUBY)
+        # Specifies the `port` that Puma will listen on to receive requests; default is 3000.
+        port ENV['DEV_PORT'] || ENV.fetch('PORT', 3000)
+      RUBY
+
+      output = capture_generator_output
+
+      expect(output).not_to include('Detected config/puma.rb.')
+    end
+
     it 'omits the mise hint when mise.toml already loads .env' do
       write_mise_toml(<<~TOML)
         [tools]
@@ -296,6 +371,18 @@ RSpec.describe Worktrees::Generators::InstallGenerator do
       expect(output).to include('Configured mise.toml to load .env from [env].')
     end
 
+    it 'omits the puma hint after --yolo updates config/puma.rb automatically' do
+      write_puma_config(<<~RUBY)
+        # Specifies the `port` that Puma will listen on to receive requests; default is 3000.
+        port ENV.fetch("PORT", 3000)
+      RUBY
+
+      output = capture_generator_output('--yolo')
+
+      expect(output).not_to include('Detected config/puma.rb.')
+      expect(output).to include('Updated config/puma.rb to prefer DEV_PORT before PORT.')
+    end
+
     it 'omits the database note when database.yml was already identical' do
       write_database_yml(
         "development:\n  database: app_development<%= ENV.fetch('WORKTREE_DATABASE_SUFFIX', '') %>\n"
@@ -316,6 +403,11 @@ RSpec.describe Worktrees::Generators::InstallGenerator do
   describe 'generator metadata' do
     it 'uses the shorter generator namespace' do
       expect(described_class.namespace).to eq('worktrees:install')
+    end
+
+    it 'describes the full --yolo follow-up scope' do
+      expect(described_class.class_options.fetch(:yolo).description)
+        .to eq('Apply common Procfile.dev, config/puma.rb, and mise .env follow-up edits when safe')
     end
 
     it 'points at the shared templates directory' do
