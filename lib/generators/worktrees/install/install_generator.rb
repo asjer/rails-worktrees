@@ -17,12 +17,24 @@ module Worktrees
       include ::Rails::Worktrees::Generators::PumaFollowUp
 
       namespace 'worktrees:install'
-      desc 'Installs bin/wt, a Rails::Worktrees initializer, and updates config/database.yml when safe.'
+      desc [
+        'Installs bin/wt, optional bin/ob, a Rails::Worktrees initializer,',
+        'and updates config/database.yml when safe.'
+      ].join(' ')
       source_root File.expand_path('../../rails/worktrees/templates', __dir__)
       class_option :conductor, type: :boolean, default: false,
                                desc: 'Configure the installer for ~/Sites/conductor/workspaces'
-      class_option :yolo, type: :boolean, default: false,
-                          desc: 'Apply common Procfile.dev, config/puma.rb, and mise .env follow-up edits when safe'
+      class_option :browser,
+                   type: :boolean,
+                   default: false,
+                   desc: 'Generate bin/ob to open localhost:$DEV_PORT routes for this app/worktree'
+      class_option :yolo,
+                   type: :boolean,
+                   default: false,
+                   desc: [
+                     'Apply common Procfile.dev, config/puma.rb, and mise .env',
+                     'follow-up edits when safe; also generate bin/ob'
+                   ].join(' ')
 
       FOLLOW_UP_TEMPLATE = <<~TEXT.freeze
           ============================================
@@ -44,6 +56,13 @@ module Worktrees
       def create_bin_wrapper
         template('bin/wt', 'bin/wt')
         chmod('bin/wt', 0o755)
+      end
+
+      def create_browser_wrapper
+        return unless install_browser_wrapper?
+
+        template('bin/ob', 'bin/ob')
+        chmod('bin/ob', 0o755)
       end
 
       def create_initializer
@@ -124,7 +143,7 @@ module Worktrees
       end
 
       def follow_up_notes_text
-        [super, puma_follow_up_notes_text].join
+        [super, browser_follow_up_notes_text, puma_follow_up_notes_text].join
       end
 
       def installed_items_text
@@ -132,6 +151,7 @@ module Worktrees
           '      • bin/wt',
           '      • config/initializers/rails_worktrees.rb'
         ]
+        items << '      • bin/ob' if install_browser_wrapper?
         items << '      • Procfile.dev.worktree.example' unless options[:yolo]
         items << database_follow_up_line if database_follow_up_line
         items.join("\n")
@@ -209,6 +229,22 @@ module Worktrees
       def announce_missing_mise_toml
         say_status(:skip, 'mise.toml/.mise.toml not found', :yellow)
         say('Skipped mise yolo update because no supported mise config file was found.')
+      end
+
+      def browser_follow_up_notes_text
+        return '' unless install_browser_wrapper?
+
+        [
+          '',
+          '      Open browser:',
+          '        $ bin/ob',
+          '        $ bin/ob contact',
+          "        $ bin/ob --print-url '?from=nav'"
+        ].join("\n")
+      end
+
+      def install_browser_wrapper?
+        options[:yolo] || options[:browser]
       end
 
       def git_repo?
