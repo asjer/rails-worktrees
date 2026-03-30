@@ -2,9 +2,13 @@
 
 `rails-worktrees` adds a Rails-friendly `bin/wt` command for creating Git worktrees with isolated development and test databases.
 
-## Installation
+## Requirements
 
-Install the gem and add to the application's Gemfile by executing:
+- Ruby >= 3.2.0
+- Rails >= 7.1, < 8.2
+- Git
+
+## Installation
 
 ```bash
 bundle add rails-worktrees
@@ -20,18 +24,27 @@ The installer adds:
 
 ## Usage
 
-Create a new worktree from inside your Rails app:
-
 ```bash
-bin/wt
-bin/wt my-feature
-bin/wt --dry-run my-feature
-bin/wt --print-env my-feature
+bin/wt                          # auto-pick a name from bundled *.txt lists
+bin/wt my-feature               # use an explicit worktree name
+bin/wt --dry-run my-feature     # preview the full setup without changing anything
+bin/wt --print-env my-feature   # preview DEV_PORT and WORKTREE_DATABASE_SUFFIX
 ```
 
-By default the command:
+### Options
 
-- creates a sibling worktrees directory next to your app, so `workspace/my-project` gets worktrees in `workspace/my-project.worktrees/<name>`
+| Flag | Description |
+|------|-------------|
+| `-h`, `--help` | Show the help message |
+| `-v`, `--version` | Show the script version |
+| `--dry-run [name]` | Preview the full worktree setup without changing anything |
+| `--env`, `--print-env <name>` | Preview `DEV_PORT` and `WORKTREE_DATABASE_SUFFIX` |
+
+### Default behavior
+
+By default `bin/wt`:
+
+- creates a sibling directory next to your app: `workspace/my-project.worktrees/<name>`
 - uses a branch named `🚂/<name>`
 - creates new branches from `origin`'s default branch
 - auto-picks names from bundled `.txt` files when no explicit name is given
@@ -47,27 +60,39 @@ workspace/
     └── experiment/
 ```
 
-`WT_WORKSPACES_ROOT` and `config.workspace_root` override the destination root at runtime and use the explicit layout `<root>/<project>/<name>`.
+`WT_WORKSPACES_ROOT` or `config.workspace_root` overrides the destination root and uses the layout `<root>/<project>/<name>`.
+
+### Interactive prompts
+
+`bin/wt` handles several edge cases interactively:
+
+- **Branch already exists locally** — asks whether to attach a new worktree to it
+- **Branch already exists on origin** — asks whether to create a local tracking worktree
+- **Target directory already exists with matching branch** — asks whether to reuse it
+- **Target directory already exists with a different branch** — asks whether to remove and recreate it
+- **Retired bundled name used explicitly** — rejects it and suggests running `wt` with no argument
+
+### Name validation
+
+Worktree names must not contain `/` or whitespace, must not be `.` or `..`, and must be a valid Git ref component.
 
 ### Configuration
 
 The installer generates `config/initializers/rails_worktrees.rb` where you can override:
 
-- `bootstrap_env`
-- `workspace_root`
-- `dev_port_range`
-- `branch_prefix`
-- `name_sources_path`
-- `used_names_file`
-- `worktree_database_suffix_max_length`
-
-By default, the generated initializer leaves `workspace_root` commented out so the project-relative sibling layout stays active.
+| Option | Default | Description |
+|--------|---------|-------------|
+| `bootstrap_env` | `true` | Write `.env` when creating a worktree |
+| `workspace_root` | `nil` | Override the destination root (sibling layout when `nil`) |
+| `dev_port_range` | `3000..3999` | Port range for deterministic `DEV_PORT` allocation |
+| `branch_prefix` | `🚂` | Prefix for worktree branch names |
+| `name_sources_path` | bundled `names/` | Directory containing `.txt` name lists |
+| `used_names_file` | `~/.local/state/rails-worktrees/used-names.tsv` | TSV tracking retired names |
+| `worktree_database_suffix_max_length` | `18` | Max length for generated database suffixes |
 
 ### Database naming
 
-The installer attempts to add `WORKTREE_DATABASE_SUFFIX` to common `development` and `test` database names in `config/database.yml`.
-
-For a multi-database app, the target shape is:
+The installer adds `WORKTREE_DATABASE_SUFFIX` to common `development` and `test` database names in `config/database.yml`. For a multi-database app, the target shape is:
 
 ```yaml
 development:
@@ -81,60 +106,28 @@ test:
 
 If your `database.yml` is too custom to patch safely, the installer leaves it alone and tells you what to update manually.
 
-### Worktree environment bootstrap
+### Environment bootstrap
 
-When `bin/wt` creates a fresh worktree, it also creates or updates a worktree-local `.env` file.
+When `bin/wt` creates a worktree it writes a worktree-local `.env` with:
 
-That `.env` currently manages:
+- `DEV_PORT` — deterministic port derived from the worktree name via CRC32, rotated through `dev_port_range`, skipping ports already claimed by peer worktrees
+- `WORKTREE_DATABASE_SUFFIX` — derived from the worktree name so the `database.yml` ERB works immediately
 
-- `DEV_PORT` — derived deterministically from the worktree name and `config.dev_port_range`
-- `WORKTREE_DATABASE_SUFFIX` — derived from the worktree name so the generated `database.yml` ERB becomes immediately useful
+Existing `.env` values are never overwritten.
 
-Existing `.env` values win, so rerunning `bin/wt` or bootstrapping a worktree again will not overwrite a custom `DEV_PORT` or `WORKTREE_DATABASE_SUFFIX`.
-
-If you want to preview the full worktree setup without creating anything yet, run:
-
-```bash
-bin/wt --dry-run my-feature
-```
-
-That preview resolves the worktree name, branch, target path, and `.env` values it would use, then finishes with a clear "no changes were made" summary.
-
-If you want to preview those derived values without creating a worktree yet, run:
-
-```bash
-bin/wt --print-env my-feature
-```
-
-That command prints copy-pasteable environment lines like:
-
-```text
-DEV_PORT=3383
-WORKTREE_DATABASE_SUFFIX=_my_feature
-```
-
-When `bin/wt` does create the worktree, the final summary now also echoes the chosen port and suffix so you can see the result immediately.
-
-`rails-worktrees` does **not** edit your real `Procfile.dev` automatically. Instead, the installer generates `Procfile.dev.worktree.example` so you can copy this line into your app's process manager setup when you want Rails to honor the generated port:
+The gem does **not** edit your `Procfile.dev` or add dotenv. The installer generates `Procfile.dev.worktree.example` with a ready-to-copy line:
 
 ```text
 web: env RUBY_DEBUG_OPEN=true bin/rails server -b 0.0.0.0 -p ${DEV_PORT:-3000}
 ```
 
-The gem also does **not** add dotenv or change Rails env loading; it only writes `.env` for your worktree. Your app or process manager still decides how that file gets loaded.
-
-If you already use `mise`, a nice way to keep those worktree-local values up to date on directory enter is:
-
-```toml
-[env]
-_.file = ".env"
-```
-
-That keeps `DEV_PORT` and `WORKTREE_DATABASE_SUFFIX` scoped to the current worktree. In general, prefer a project-local env loader like `mise` over exporting these values from `~/.zshrc`, since the values are worktree-specific and can differ across worktrees.
+Use a project-local env loader like `mise` with `_.file = ".env"` to keep values scoped per-worktree.
 
 ## Development
 
 After checking out the repo, run `bin/setup` to install dependencies. Then, run `rake spec` to run the tests. You can also run `bin/console` for an interactive prompt that will allow you to experiment.
+
+To install this gem onto your local machine, run `bundle exec rake install`. To release a new version, update the version number in `version.rb`, and then run `bundle exec rake release`, which will create a git tag for the version, push git commits and the created tag, and push the `.gem` file to [rubygems.org](https://rubygems.org).
 
 ### Smoke testing
 
@@ -157,8 +150,6 @@ By default, the script cleans up all temp directories after the run. Set `KEEP_S
 There is also a manually triggered GitHub Actions workflow named `Smoke Test` for running the same disposable-app verification in CI without slowing down the default pull request checks.
 
 The workflow accepts optional `ruby_version`, `rails_version`, `keep_artifacts`, and `verbose` inputs. Enable `keep_artifacts` when you want the disposable app, bare origin, and worktree directories uploaded from CI for debugging, and enable `verbose` when you want shell tracing in the smoke-test log.
-
-To install this gem onto your local machine, run `bundle exec rake install`. To release a new version, update the version number in `version.rb`, and then run `bundle exec rake release`, which will create a git tag for the version, push git commits and the created tag, and push the `.gem` file to [rubygems.org](https://rubygems.org).
 
 ## Contributing
 
