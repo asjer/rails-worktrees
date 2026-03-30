@@ -1,5 +1,9 @@
 # frozen_string_literal: true
 
+require 'fileutils'
+require 'stringio'
+require 'tmpdir'
+
 RSpec.describe Rails::Worktrees do
   after do
     described_class.reset_configuration!
@@ -32,5 +36,52 @@ RSpec.describe Rails::Worktrees do
     end
 
     expect(returned_configuration).to be(described_class.configuration)
+  end
+
+  describe 'install guidance' do
+    let(:tmpdir) { Dir.mktmpdir('rails-worktrees-install-guidance-spec') }
+
+    after do
+      FileUtils.rm_rf(tmpdir)
+    end
+
+    it 'detects when the app installer has not run yet' do
+      expect(described_class.installation_complete?(tmpdir)).to be(false)
+    end
+
+    it 'detects when the app installer has already created its files' do
+      FileUtils.mkdir_p(File.join(tmpdir, 'bin'))
+      FileUtils.mkdir_p(File.join(tmpdir, 'config/initializers'))
+      File.write(File.join(tmpdir, 'bin/wt'), "#!/usr/bin/env ruby\n")
+      File.write(File.join(tmpdir, 'config/initializers/rails_worktrees.rb'), "# installed\n")
+
+      expect(described_class.installation_complete?(tmpdir)).to be(true)
+    end
+
+    it 'warns with the generator command when installation files are missing' do
+      output = StringIO.new
+
+      described_class.warn_about_missing_installation(
+        root: tmpdir,
+        stderr: output,
+        argv: %w[server]
+      )
+
+      expect(output.string).to include('bin/rails generate rails:worktrees:install')
+      expect(output.string).to include('bin/wt')
+      expect(output.string).to include('config/initializers/rails_worktrees.rb')
+    end
+
+    it 'stays quiet while the installer generator itself is running' do
+      output = StringIO.new
+
+      described_class.warn_about_missing_installation(
+        root: tmpdir,
+        stderr: output,
+        argv: %w[generate rails:worktrees:install]
+      )
+
+      expect(output.string).to eq('')
+    end
   end
 end
