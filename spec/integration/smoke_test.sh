@@ -92,7 +92,7 @@ say 'Installing app dependencies'
 bundle install
 
 say 'Running rails-worktrees installer'
-bundle exec rails generate rails:worktrees:install
+bundle exec rails generate worktrees:install
 
 [[ -x bin/wt ]] || fail 'Expected bin/wt to exist and be executable'
 [[ -f config/initializers/rails_worktrees.rb ]] || fail 'Expected config/initializers/rails_worktrees.rb to exist'
@@ -109,7 +109,7 @@ GIT_AUTHOR_NAME='Smoke Test' \
   GIT_AUTHOR_EMAIL='smoke@example.com' \
   GIT_COMMITTER_NAME='Smoke Test' \
   GIT_COMMITTER_EMAIL='smoke@example.com' \
-  git commit -m 'Smoke test app setup'
+  git -c commit.gpgSign=false commit -m 'Smoke test app setup'
 git remote add origin "$ORIGIN_ROOT/origin.git"
 git push -u origin main
 git remote set-head origin -a

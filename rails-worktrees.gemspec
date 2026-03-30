@@ -26,7 +26,7 @@ Gem::Specification.new do |spec|
       Thank you for installing rails-worktrees! \u{1F389}
 
       Run the installer:
-        $ bin/rails generate rails:worktrees:install
+        $ bin/rails generate worktrees:install
 
       Docs: https://github.com/asjer/rails-worktrees
     ============================================

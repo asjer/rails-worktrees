@@ -67,18 +67,18 @@ RSpec.describe Rails::Worktrees do
         argv: %w[server]
       )
 
-      expect(output.string).to include('bin/rails generate rails:worktrees:install')
+      expect(output.string).to include('bin/rails generate worktrees:install')
       expect(output.string).to include('bin/wt')
       expect(output.string).to include('config/initializers/rails_worktrees.rb')
     end
 
-    it 'stays quiet while the installer generator itself is running' do
+    it 'stays quiet while the shorter installer generator name is running' do
       output = StringIO.new
 
       described_class.warn_about_missing_installation(
         root: tmpdir,
         stderr: output,
-        argv: %w[generate rails:worktrees:install]
+        argv: %w[generate worktrees:install]
       )
 
       expect(output.string).to eq('')
