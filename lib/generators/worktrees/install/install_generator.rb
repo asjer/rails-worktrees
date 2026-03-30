@@ -2,9 +2,11 @@ require 'open3'
 require 'rails/generators'
 
 require_relative '../../rails/worktrees/mise_follow_up'
+require_relative '../../rails/worktrees/puma_follow_up'
 require_relative '../../../rails/worktrees/database_config_updater'
 require_relative '../../../rails/worktrees/procfile_updater'
 require_relative '../../../rails/worktrees/mise_toml_updater'
+require_relative '../../../rails/worktrees/puma_config_updater'
 
 module Worktrees
   module Generators
@@ -12,6 +14,7 @@ module Worktrees
     # rubocop:disable Metrics/ClassLength
     class InstallGenerator < ::Rails::Generators::Base
       include ::Rails::Worktrees::Generators::MiseFollowUp
+      include ::Rails::Worktrees::Generators::PumaFollowUp
 
       namespace 'worktrees:install'
       desc 'Installs bin/wt, a Rails::Worktrees initializer, and updates config/database.yml when safe.'
@@ -19,7 +22,7 @@ module Worktrees
       class_option :conductor, type: :boolean, default: false,
                                desc: 'Configure the installer for ~/Sites/conductor/workspaces'
       class_option :yolo, type: :boolean, default: false,
-                          desc: 'Apply common Procfile.dev and mise .env follow-up edits when safe'
+                          desc: 'Apply common Procfile.dev, config/puma.rb, and mise .env follow-up edits when safe'
 
       FOLLOW_UP_TEMPLATE = <<~TEXT.freeze
           ============================================
@@ -55,6 +58,7 @@ module Worktrees
         return unless options[:yolo]
 
         update_procfile
+        update_puma_config
         update_mise_toml
       end
 
@@ -92,6 +96,10 @@ module Worktrees
         File.join(destination_root, 'Procfile.dev')
       end
 
+      def puma_config_path
+        File.join(destination_root, 'config/puma.rb')
+      end
+
       def mise_toml_paths
         [
           File.join(destination_root, 'mise.toml'),
@@ -111,6 +119,10 @@ module Worktrees
 
       def follow_up_message
         "\n#{format(FOLLOW_UP_TEMPLATE, installed: installed_items_text, notes: follow_up_notes_text)}"
+      end
+
+      def follow_up_notes_text
+        [super, puma_follow_up_notes_text].join
       end
 
       def installed_items_text
@@ -150,6 +162,18 @@ module Worktrees
         result = ::Rails::Worktrees::ProcfileUpdater.new(content: File.read(procfile_path)).call
         File.write(procfile_path, result.content) if result.changed?
         announce_updater_result('Procfile.dev', result)
+      end
+
+      def update_puma_config
+        unless File.exist?(puma_config_path)
+          say_status(:skip, 'config/puma.rb not found', :yellow)
+          say('Skipped config/puma.rb yolo update because the file does not exist yet.')
+          return
+        end
+
+        result = ::Rails::Worktrees::PumaConfigUpdater.new(content: File.read(puma_config_path)).call
+        File.write(puma_config_path, result.content) if result.changed?
+        announce_updater_result('config/puma.rb', result)
       end
 
       def update_mise_toml

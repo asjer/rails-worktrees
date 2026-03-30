@@ -114,6 +114,7 @@ grep -Eq '^wt [0-9]+\.[0-9]+\.[0-9]+' < <(bin/wt --version) || fail 'Expected bi
 grep -Fq 'web: env RUBY_DEBUG_OPEN=true bin/rails server -b 0.0.0.0 -p ${DEV_PORT:-3000}' Procfile.dev.worktree.example || fail 'Expected Procfile.dev.worktree.example to include the DEV_PORT-aware web entry'
 grep -Fq 'web: env RUBY_DEBUG_OPEN=true bin/rails server -b 0.0.0.0 -p ${DEV_PORT:-3000}' Procfile.dev || fail 'Expected Procfile.dev to include the DEV_PORT-aware web entry after --yolo'
 grep -Fq 'js: yarn build --watch' Procfile.dev || fail 'Expected Procfile.dev to preserve non-web entries after --yolo'
+grep -Fq "port ENV['DEV_PORT'] || ENV.fetch('PORT', 3000)" config/puma.rb || fail 'Expected config/puma.rb to prefer DEV_PORT after --yolo'
 grep -Fq '[env]' mise.toml || fail 'Expected mise.toml to include an [env] section after --yolo'
 grep -Fq '_.file = ".env"' mise.toml || fail 'Expected mise.toml to load .env after --yolo'
 
