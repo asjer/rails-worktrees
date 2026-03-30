@@ -5,6 +5,28 @@ module Rails
       module WorkspacePaths
         private
 
+        def resolve_repository_context
+          current_root = canonical_path(git_capture('rev-parse', '--show-toplevel').strip)
+          common_dir = expand_git_path(git_capture('rev-parse', '--git-common-dir').strip)
+          primary_root = primary_checkout_root_for(current_root, common_dir)
+
+          repository_context_for(current_root, primary_root)
+        end
+
+        def repository_context_for(current_root, primary_root)
+          project_name = File.basename(primary_root)
+          workspaces = resolve_workspaces(primary_root, project_name)
+
+          {
+            current_root: current_root,
+            primary_root: primary_root,
+            project_name: project_name,
+            workspaces: workspaces,
+            workspaces_root: workspaces[:root],
+            uses_default_workspace_root: workspaces[:uses_default_root]
+          }
+        end
+
         def resolve_workspaces(repo_root, project_name)
           explicit_root = configured_workspaces_root
           return { root: explicit_root, uses_default_root: false } if explicit_root
@@ -36,6 +58,18 @@ module Rails
           return info("Would create workspace directory '#{parent_dir}'") if dry_run?
 
           FileUtils.mkdir_p(parent_dir)
+        end
+
+        def primary_checkout_root_for(current_root, common_dir)
+          return current_root unless File.basename(common_dir) == '.git'
+
+          canonical_path(File.dirname(common_dir))
+        end
+
+        def expand_git_path(path)
+          return path if path.start_with?('/')
+
+          File.expand_path(path, @cwd)
         end
 
         def present_path?(path)

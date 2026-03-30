@@ -2,6 +2,7 @@ module Rails
   module Worktrees
     class Command
       # User-facing output, prompts, and help text.
+      # rubocop:disable Metrics/ModuleLength
       module Output
         private
 
@@ -26,16 +27,20 @@ module Rails
         def usage
           <<~USAGE
             wt #{::Rails::Worktrees::VERSION}
-            Create Git worktrees for the current repository.
+            Create and clean up Git worktrees for the current repository.
 
             Usage: wt [worktree-name]
                    wt --dry-run [worktree-name]
                    wt --print-env <worktree-name>
+                   wt remove [--dry-run] [--force] <worktree-name>
+                   wt delete [--dry-run] [--force] <worktree-name>
+                   wt prune [--dry-run]
 
             Options:
               -h, --help                  Show this help message
               -v, --version               Show the script version
-              --dry-run [name]            Preview the full worktree setup without changing anything
+              --dry-run [name]            Preview worktree creation or cleanup without changing anything
+              --force                     Delete an unmerged local branch with wt remove/delete
               --env, --print-env <name>   Preview DEV_PORT and WORKTREE_DATABASE_SUFFIX
 
             Quick start:
@@ -43,12 +48,17 @@ module Rails
               wt my-feature      Use an explicit worktree name
               wt --dry-run my-feature
               wt --print-env my-feature
+              wt remove my-feature
+              wt remove --force my-feature
+              wt prune
 
             How it works:
               - by default creates worktrees beside the repo in ../<project>.worktrees/<name>
               - when workspace_root or WT_WORKSPACES_ROOT is set, creates worktrees in <root>/<project>/<name>
               - always uses the branch name #{@configuration.branch_prefix}/<name>
               - bases new branches on the repository's origin default branch
+              - wt remove/delete can run from the main checkout or any sibling worktree, but never remove the worktree you're currently in
+              - wt prune removes merged worktrees created by wt while skipping the main checkout and the checkout you're in
               - auto-discovers bundled *.txt files from #{@configuration.name_sources_path}
               - retires bundled names in #{@configuration.used_names_file}
           USAGE
@@ -75,7 +85,7 @@ module Rails
           @stdout.puts("→ #{message}")
         end
 
-        def announce_dry_run = info('Dry run: previewing worktree setup without making changes')
+        def announce_dry_run = info('Dry run: previewing worktree changes without applying them')
 
         def complete_dry_run(context, env_values:)
           success('Dry run complete')
@@ -88,6 +98,53 @@ module Rails
           preview_result = preview_worktree_environment(context)
           info("Would reuse existing worktree at '#{target}' on '#{branch}'")
           complete_dry_run(context, env_values: preview_result&.values)
+        end
+
+        def complete_remove_dry_run(context, worktree_exists:, branch_exists:)
+          info(remove_dry_run_target_message(context, worktree_exists: worktree_exists))
+          info(remove_dry_run_branch_message(context, branch_exists: branch_exists))
+
+          success('Dry run complete')
+          print_context_summary(context, env_values: nil)
+          info('No changes were made.')
+          0
+        end
+
+        def remove_dry_run_target_message(context, worktree_exists:)
+          return "Would skip worktree removal because '#{context[:target_dir]}' does not exist" unless worktree_exists
+
+          action = if registered_worktree_path?(context[:target_dir])
+                     'remove registered worktree at'
+                   else
+                     'remove existing target path'
+                   end
+          "Would #{action} '#{context[:target_dir]}'"
+        end
+
+        def remove_dry_run_branch_message(context, branch_exists:)
+          unless branch_exists
+            return "Would skip local branch deletion because '#{context[:branch_name]}' does not exist"
+          end
+
+          "Would delete local branch '#{context[:branch_name]}'"
+        end
+
+        def print_prune_candidates(candidates)
+          candidates.each do |context|
+            info("#{context[:worktree_name]} => #{context[:target_dir]} (#{context[:branch_name]})")
+          end
+        end
+
+        def complete_prune_noop
+          info('No merged worktrees created by wt are ready to prune.')
+          0
+        end
+
+        def complete_prune_dry_run(candidates)
+          info("Would prune #{candidates.length} merged worktree#{'s' unless candidates.length == 1}")
+          success('Dry run complete')
+          info('No changes were made.')
+          0
         end
 
         def warning(message)
@@ -124,6 +181,7 @@ module Rails
           @stdout.puts("Suffix: #{suffix}")
         end
       end
+      # rubocop:enable Metrics/ModuleLength
     end
   end
 end

@@ -42,6 +42,10 @@ bin/wt                          # auto-pick a name from bundled *.txt lists
 bin/wt my-feature               # use an explicit worktree name
 bin/wt --dry-run my-feature     # preview the full setup without changing anything
 bin/wt --print-env my-feature   # preview DEV_PORT and WORKTREE_DATABASE_SUFFIX
+bin/wt remove my-feature        # remove a worktree and delete its local branch
+bin/wt delete my-feature        # alias for `bin/wt remove`
+bin/wt remove --force my-feature # also delete an unmerged local branch
+bin/wt prune                    # remove merged worktrees created by wt
 
 bin/ob                          # open http://localhost:$DEV_PORT/
 bin/ob contact                  # open http://localhost:$DEV_PORT/contact
@@ -55,7 +59,8 @@ bin/ob --print-url '?from=nav'  # print the resolved URL without opening a brows
 |------|-------------|
 | `-h`, `--help` | Show the help message |
 | `-v`, `--version` | Show the script version |
-| `--dry-run [name]` | Preview the full worktree setup without changing anything |
+| `--dry-run [name]` | Preview worktree creation or cleanup without changing anything |
+| `--force` | Force branch deletion for `bin/wt remove` / `bin/wt delete` |
 | `--env`, `--print-env <name>` | Preview `DEV_PORT` and `WORKTREE_DATABASE_SUFFIX` |
 
 ### Default behavior
@@ -80,6 +85,33 @@ workspace/
 
 `WT_WORKSPACES_ROOT` or `config.workspace_root` overrides the destination root and uses the layout `<root>/<project>/<name>`.
 
+### Cleanup commands
+
+`bin/wt` also supports cleanup commands for worktrees it manages:
+
+- `bin/wt remove <name>` — remove the named worktree and delete its local branch
+- `bin/wt delete <name>` — alias for `bin/wt remove <name>`
+- `bin/wt prune` — remove merged worktrees created by `bin/wt` in bulk
+
+`bin/wt remove` and `bin/wt prune` can be run from the main checkout or any sibling worktree in the same repository family.
+
+`bin/wt remove` refuses to remove the worktree you're currently in, and by default only deletes a local branch after confirming it is already merged into `origin`'s default branch. Use `bin/wt remove --force <name>` when you intentionally want to delete an unmerged local branch too.
+
+`bin/wt prune` only targets linked worktrees created by `bin/wt` whose local branches are already merged into `origin`'s default branch. It skips the main checkout, skips the checkout you're currently in, and asks for confirmation before deleting the batch.
+
+If you want to preview a single removal first, use `--dry-run` with `bin/wt remove`:
+
+```bash
+bin/wt remove --dry-run feature-auth
+```
+
+If you want to see what `bin/wt prune` would clean up before saying yes, use `--dry-run`:
+
+```bash
+bin/wt prune --dry-run
+```
+
+
 ### Interactive prompts
 
 `bin/wt` handles several edge cases interactively:
@@ -88,6 +120,7 @@ workspace/
 - **Branch already exists on origin** — asks whether to create a local tracking worktree
 - **Target directory already exists with matching branch** — asks whether to reuse it
 - **Target directory already exists with a different branch** — asks whether to remove and recreate it
+- **Prune found merged worktrees created by `wt`** — asks whether to delete the batch
 - **Retired bundled name used explicitly** — rejects it and suggests running `wt` with no argument
 
 ### Name validation
@@ -197,7 +230,7 @@ This smoke test:
 - installs `rails-worktrees` from the current checkout path
 - runs `bin/rails generate worktrees:install --yolo`
 - verifies `bin/wt`, `bin/ob`, the generated initializer, that `--yolo` skips the Procfile example, yolo updates to `Procfile.dev`, `config/puma.rb`, and `mise.toml`, `config/database.yml` patching, and worktree `.env` bootstrapping
-- creates a temporary bare `origin` and confirms `bin/wt smoke-branch` creates a real worktree
+- creates a temporary bare `origin`, confirms `bin/wt smoke-branch` creates a real worktree, and confirms `bin/wt remove smoke-branch` can remove that merged worktree from a sibling worktree checkout
 
 By default, the script cleans up all temp directories after the run. Set `KEEP_SMOKE_TEST_ARTIFACTS=1` to keep them around for debugging, or set `RAILS_WORKTREES_SMOKE_RAILS_VERSION` to try a different compatible Rails version.
 

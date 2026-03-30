@@ -29,15 +29,20 @@ RSpec.describe Rails::Worktrees::Command do
   def origin_path = File.join(tmpdir, 'origin.git')
   def default_workspaces_root = File.join(tmpdir, 'app.worktrees')
 
-  def build_command(argv: [], stdin: StringIO.new, stdout: StringIO.new, stderr: StringIO.new, env: {})
+  def build_command(argv: [], env: {}, cwd: repo_path, **io_overrides)
     # Use only path-related variables from the host to allow tools like `git` to run
     base_env = ENV.to_h.slice('PATH', 'HOME')
+    io = {
+      stdin: StringIO.new,
+      stdout: StringIO.new,
+      stderr: StringIO.new
+    }.merge(io_overrides)
 
     described_class.new(
       argv: argv,
-      io: { stdin: stdin, stdout: stdout, stderr: stderr },
+      io: io,
       env: base_env.merge(env),
-      cwd: repo_path,
+      cwd: cwd,
       configuration: configuration
     )
   end
@@ -78,7 +83,7 @@ RSpec.describe Rails::Worktrees::Command do
       target_dir = File.join(configuration.workspace_root, 'app', 'feature-one')
 
       expect(File.directory?(target_dir)).to be(false)
-      expect(out.string).to include('Dry run: previewing worktree setup without making changes')
+      expect(out.string).to include('Dry run: previewing worktree changes without applying them')
       expect(out.string).to include("Would create '#{configuration.branch_prefix}/feature-one' from 'origin/main'")
       expect(out.string).to match(/Would bootstrap \.env \(DEV_PORT=\d+, WORKTREE_DATABASE_SUFFIX=_feature_one\)/)
       expect(out.string).to include('Dry run complete')
@@ -211,6 +216,182 @@ RSpec.describe Rails::Worktrees::Command do
       expect(err.string).to include("Bundled name 'daegu' has already been used and retired")
     end
 
+    it 'removes a merged worktree and deletes its local branch' do
+      build_command(argv: ['feature-one']).run
+      target_dir = File.join(configuration.workspace_root, 'app', 'feature-one')
+      out = StringIO.new
+
+      commit_in_worktree(target_dir, 'feature.txt', "hello\n")
+      merge_worktree_branch('🚂/feature-one')
+
+      expect(build_command(argv: %w[remove feature-one], stdout: out).run).to eq(0)
+
+      expect(File.exist?(target_dir)).to be(false)
+      expect(local_branch_exists?('🚂/feature-one')).to be(false)
+      expect(out.string).to include("Removed 'feature-one'")
+    end
+
+    it 'supports wt delete as an alias for wt remove' do
+      build_command(argv: ['feature-one']).run
+      target_dir = File.join(configuration.workspace_root, 'app', 'feature-one')
+
+      commit_in_worktree(target_dir, 'feature.txt', "hello\n")
+      merge_worktree_branch('🚂/feature-one')
+
+      expect(build_command(argv: %w[delete feature-one]).run).to eq(0)
+
+      expect(File.exist?(target_dir)).to be(false)
+      expect(local_branch_exists?('🚂/feature-one')).to be(false)
+    end
+
+    it 'reports remove alias usage with supported flags' do
+      err = StringIO.new
+
+      expect(build_command(argv: ['delete', '--force'], stderr: err).run).to eq(1)
+
+      expect(err.string).to include('Usage: wt delete [--dry-run] [--force] <worktree-name>')
+    end
+
+    it 'refuses to remove an unmerged branch without --force' do
+      build_command(argv: ['feature-one']).run
+      target_dir = File.join(configuration.workspace_root, 'app', 'feature-one')
+      err = StringIO.new
+
+      commit_in_worktree(target_dir, 'feature.txt', "hello\n")
+
+      expect(build_command(argv: %w[remove feature-one], stderr: err).run).to eq(1)
+
+      expect(File.directory?(target_dir)).to be(true)
+      expect(local_branch_exists?('🚂/feature-one')).to be(true)
+      expect(err.string).to include('is not merged into origin/main')
+      expect(err.string).to include('--force')
+    end
+
+    it 'force-removes an unmerged worktree and its local branch' do
+      build_command(argv: ['feature-one']).run
+      target_dir = File.join(configuration.workspace_root, 'app', 'feature-one')
+      out = StringIO.new
+
+      commit_in_worktree(target_dir, 'feature.txt', "hello\n")
+
+      expect(build_command(argv: ['remove', '--force', 'feature-one'], stdout: out).run).to eq(0)
+
+      expect(File.exist?(target_dir)).to be(false)
+      expect(local_branch_exists?('🚂/feature-one')).to be(false)
+      expect(out.string).to include("Removed 'feature-one'")
+    end
+
+    it 'refuses to remove the current worktree from inside itself' do
+      build_command(argv: ['feature-one']).run
+      target_dir = File.join(configuration.workspace_root, 'app', 'feature-one')
+      err = StringIO.new
+
+      expect(build_command(argv: %w[remove feature-one], cwd: target_dir, stderr: err).run).to eq(1)
+
+      expect(err.string).to include('Cannot remove the current worktree from inside itself')
+      expect(File.directory?(target_dir)).to be(true)
+      expect(local_branch_exists?('🚂/feature-one')).to be(true)
+    end
+
+    it 'removes a merged sibling worktree when run from another worktree' do
+      build_command(argv: ['feature-one']).run
+      build_command(argv: ['runner']).run
+      target_dir = File.join(configuration.workspace_root, 'app', 'feature-one')
+      runner_dir = File.join(configuration.workspace_root, 'app', 'runner')
+
+      commit_in_worktree(target_dir, 'feature.txt', "hello\n")
+      merge_worktree_branch('🚂/feature-one')
+
+      expect(build_command(argv: %w[remove feature-one], cwd: runner_dir).run).to eq(0)
+
+      expect(File.exist?(target_dir)).to be(false)
+      expect(local_branch_exists?('🚂/feature-one')).to be(false)
+      expect(File.directory?(runner_dir)).to be(true)
+      expect(local_branch_exists?('🚂/runner')).to be(true)
+    end
+
+    it 'prunes merged wt-managed worktrees and skips the current worktree' do # rubocop:disable RSpec/ExampleLength
+      build_command(argv: ['feature-one']).run
+      build_command(argv: ['runner']).run
+      merged_dir = File.join(configuration.workspace_root, 'app', 'feature-one')
+      runner_dir = File.join(configuration.workspace_root, 'app', 'runner')
+      out = StringIO.new
+
+      commit_in_worktree(merged_dir, 'feature.txt', "hello\n")
+      merge_worktree_branch('🚂/feature-one')
+
+      expect(
+        build_command(argv: ['prune'], cwd: runner_dir, stdin: tty_input("yes\n"), stdout: out).run
+      ).to eq(0)
+
+      expect(File.exist?(merged_dir)).to be(false)
+      expect(local_branch_exists?('🚂/feature-one')).to be(false)
+      expect(File.directory?(runner_dir)).to be(true)
+      expect(local_branch_exists?('🚂/runner')).to be(true)
+      expect(out.string).to include('Found 1 merged worktree created by wt')
+      expect(out.string).to include("feature-one => #{merged_dir} (🚂/feature-one)")
+    end
+
+    it 'dry-runs prune without deleting anything' do
+      build_command(argv: ['feature-one']).run
+      merged_dir = File.join(configuration.workspace_root, 'app', 'feature-one')
+      out = StringIO.new
+
+      commit_in_worktree(merged_dir, 'feature.txt', "hello\n")
+      merge_worktree_branch('🚂/feature-one')
+
+      expect(build_command(argv: ['prune', '--dry-run'], stdout: out).run).to eq(0)
+
+      expect(File.directory?(merged_dir)).to be(true)
+      expect(local_branch_exists?('🚂/feature-one')).to be(true)
+      expect(out.string).to include('Dry run: previewing worktree changes without applying them')
+      expect(out.string).to include('Would prune 1 merged worktree')
+      expect(out.string).to include('No changes were made.')
+    end
+
+    it 'resolves repository context once when pruning candidates' do
+      build_command(argv: ['feature-one']).run
+      merged_dir = File.join(configuration.workspace_root, 'app', 'feature-one')
+      out = StringIO.new
+      command = build_command(argv: ['prune', '--dry-run'], stdout: out)
+
+      commit_in_worktree(merged_dir, 'feature.txt', "hello\n")
+      merge_worktree_branch('🚂/feature-one')
+
+      allow(command).to receive(:resolve_repository_context).and_call_original
+
+      expect(command.run).to eq(0)
+      expect(command).to have_received(:resolve_repository_context).once
+    end
+
+    it 'uses a non-forced branch delete unless --force was requested' do
+      command = build_command
+
+      allow(command).to receive(:ensure_local_branch_removable!)
+      allow(command).to receive(:info)
+      allow(command).to receive(:git!)
+
+      command.send(:delete_local_branch, '🚂/feature-one', force: false)
+
+      expect(command).to have_received(:ensure_local_branch_removable!).with('🚂/feature-one', force: false)
+      expect(command).to have_received(:info).with("Deleting local branch '🚂/feature-one'")
+      expect(command).to have_received(:git!).with('branch', '-d', '🚂/feature-one')
+    end
+
+    it 'uses a forced branch delete only when --force was requested' do
+      command = build_command
+
+      allow(command).to receive(:ensure_local_branch_removable!)
+      allow(command).to receive(:info)
+      allow(command).to receive(:git!)
+
+      command.send(:delete_local_branch, '🚂/feature-one', force: true)
+
+      expect(command).to have_received(:ensure_local_branch_removable!).with('🚂/feature-one', force: true)
+      expect(command).to have_received(:info).with("Deleting local branch '🚂/feature-one'")
+      expect(command).to have_received(:git!).with('branch', '-D', '🚂/feature-one')
+    end
+
     context 'with the implicit project-relative default root' do
       let(:workspace_root_override) { nil }
 
@@ -248,6 +429,24 @@ RSpec.describe Rails::Worktrees::Command do
   end
 
   def git_output(*args) = git!(*args).strip
+
+  def local_branch_exists?(branch_name)
+    _stdout_str, _stderr_str, status = Open3.capture3(
+      git_env, 'git', '-C', repo_path, 'show-ref', '--verify', '--quiet', "refs/heads/#{branch_name}"
+    )
+    status.success?
+  end
+
+  def commit_in_worktree(path, file_name, content)
+    File.write(File.join(path, file_name), content)
+    git!('-C', path, 'add', file_name)
+    git!('-C', path, 'commit', '-m', "Add #{file_name}")
+  end
+
+  def merge_worktree_branch(branch_name)
+    git!('-C', repo_path, 'merge', '--no-ff', branch_name, '-m', "Merge #{branch_name}")
+    git!('-C', repo_path, 'push', 'origin', 'main')
+  end
 
   def tty_input(content)
     StringIO.new(content).tap { |io| io.define_singleton_method(:tty?) { true } }
