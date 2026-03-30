@@ -1,5 +1,3 @@
-# frozen_string_literal: true
-
 require 'fileutils'
 require 'stringio'
 require 'tmpdir'
@@ -72,6 +70,13 @@ RSpec.describe Rails::Worktrees do
       expect(output.string).to include('config/initializers/rails_worktrees.rb')
     end
 
+    it 'returns a generic install message when no app root is available' do
+      message = described_class.missing_installation_message(root: nil)
+
+      expect(message).to include('bin/rails generate worktrees:install')
+      expect(message).not_to include('Missing expected files under')
+    end
+
     it 'stays quiet while the shorter installer generator name is running' do
       output = StringIO.new
 
@@ -79,6 +84,18 @@ RSpec.describe Rails::Worktrees do
         root: tmpdir,
         stderr: output,
         argv: %w[generate worktrees:install]
+      )
+
+      expect(output.string).to eq('')
+    end
+
+    it 'stays quiet while the Rails generator alias is running' do
+      output = StringIO.new
+
+      described_class.warn_about_missing_installation(
+        root: tmpdir,
+        stderr: output,
+        argv: %w[g worktrees:install]
       )
 
       expect(output.string).to eq('')

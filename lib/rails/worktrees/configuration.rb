@@ -1,11 +1,9 @@
-# frozen_string_literal: true
-
 module Rails
   module Worktrees
     # Stores application-level settings for the wt command.
     class Configuration
       DEFAULT_BOOTSTRAP_ENV = true
-      DEFAULT_BRANCH_PREFIX = '🚂'
+      DEFAULT_BRANCH_PREFIX = '🚂'.freeze
       DEFAULT_DEV_PORT_RANGE = (3000..3999)
       DEFAULT_USED_NAMES_DIRECTORY = File.join(
         ENV.fetch('XDG_STATE_HOME', File.join(Dir.home, '.local/state')),

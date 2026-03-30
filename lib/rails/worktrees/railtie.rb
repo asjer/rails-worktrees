@@ -1,5 +1,3 @@
-# frozen_string_literal: true
-
 module Rails
   module Worktrees
     # Hooks install guidance into Rails boot when the generator has not run yet.

@@ -1,5 +1,3 @@
-# frozen_string_literal: true
-
 require 'open3'
 require 'rails/generators'
 
@@ -18,7 +16,7 @@ module Worktrees
       class_option :conductor, type: :boolean, default: false,
                                desc: 'Configure the installer for ~/Sites/conductor/workspaces'
 
-      FOLLOW_UP_TEMPLATE = <<~TEXT
+      FOLLOW_UP_TEMPLATE = <<~TEXT.freeze
           ============================================
             rails-worktrees installed successfully! 🚂
 
