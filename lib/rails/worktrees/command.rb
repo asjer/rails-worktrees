@@ -1,5 +1,3 @@
-# frozen_string_literal: true
-
 require 'fileutils'
 require_relative 'command/environment_support'
 require_relative 'command/git_operations'

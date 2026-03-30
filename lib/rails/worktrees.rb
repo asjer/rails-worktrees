@@ -1,5 +1,3 @@
-# frozen_string_literal: true
-
 require 'pathname'
 
 require_relative 'worktrees/version'
@@ -14,7 +12,7 @@ module Rails
   module Worktrees
     class Error < StandardError; end
 
-    INSTALL_GENERATOR_COMMAND = 'bin/rails generate worktrees:install'
+    INSTALL_GENERATOR_COMMAND = 'bin/rails generate worktrees:install'.freeze
     INSTALL_GENERATOR_NAMES = %w[worktrees:install].freeze
     REQUIRED_INSTALLATION_PATHS = [
       'bin/wt',
@@ -42,20 +40,9 @@ module Rails
       end
 
       def missing_installation_message(root: resolve_root)
-        root_path = normalize_root(root)
+        return generic_missing_installation_message unless root
 
-        <<~MSG
-
-          rails-worktrees is in your bundle, but the app installer has not run yet.
-
-          Run:
-            $ #{INSTALL_GENERATOR_COMMAND}
-
-          Missing expected files under #{root_path}:
-          #{missing_installation_items_text(root_path)}
-
-          Docs: https://github.com/asjer/rails-worktrees
-        MSG
+        detailed_missing_installation_message(normalize_root(root))
       end
 
       def warn_about_missing_installation(root: resolve_root, stderr: $stderr, argv: ARGV)
@@ -76,10 +63,13 @@ module Rails
 
       def install_generator_invocation?(argv)
         normalized_args = Array(argv).map(&:to_s)
+        generator_commands = %w[generate g]
 
         INSTALL_GENERATOR_NAMES.any? do |generator_name|
           normalized_args.include?(generator_name) ||
-            normalized_args.each_cons(2).any? { |left, right| left == 'generate' && right == generator_name }
+            normalized_args.each_cons(2).any? do |left, right|
+              generator_commands.include?(left) && right == generator_name
+            end
         end
       end
 
@@ -87,6 +77,33 @@ module Rails
         root_path = normalize_root(root)
 
         REQUIRED_INSTALLATION_PATHS.map { |relative_path| root_path.join(relative_path) }
+      end
+
+      def generic_missing_installation_message
+        <<~MSG
+
+          rails-worktrees is in your bundle, but the app installer has not run yet.
+
+          Run:
+            $ #{INSTALL_GENERATOR_COMMAND}
+
+          Docs: https://github.com/asjer/rails-worktrees
+        MSG
+      end
+
+      def detailed_missing_installation_message(root_path)
+        <<~MSG
+
+          rails-worktrees is in your bundle, but the app installer has not run yet.
+
+          Run:
+            $ #{INSTALL_GENERATOR_COMMAND}
+
+          Missing expected files under #{root_path}:
+          #{missing_installation_items_text(root_path)}
+
+          Docs: https://github.com/asjer/rails-worktrees
+        MSG
       end
 
       def missing_installation_items_text(root)

@@ -11,6 +11,11 @@ Bundler/OrderedGems:
   Description: Gems within groups in the Gemfile should be alphabetically sorted.
   Enabled: true
 
+Style/FrozenStringLiteralComment:
+  Description: Checks for the presence of the frozen string literal comment.
+  Enabled: true
+  EnforcedStyle: never
+
 Style/StringLiterals:
   Description: Checks if uses of quotes match the configured preference.
   EnforcedStyle: single_quotes

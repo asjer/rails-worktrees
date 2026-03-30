@@ -1,5 +1,3 @@
-# frozen_string_literal: true
-
 Rails::Worktrees.configure do |config|
 <% if options['conductor'] -%>
   config.workspace_root = <%= conductor_workspace_root %>

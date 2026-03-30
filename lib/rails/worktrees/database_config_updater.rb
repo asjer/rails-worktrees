@@ -1,5 +1,3 @@
-# frozen_string_literal: true
-
 module Rails
   module Worktrees
     # Safely patches common database.yml layouts for worktree suffixes.
@@ -10,7 +8,7 @@ module Rails
         end
       end
 
-      SUFFIX_TEMPLATE = "<%= ENV.fetch('WORKTREE_DATABASE_SUFFIX', '') %>"
+      SUFFIX_TEMPLATE = "<%= ENV.fetch('WORKTREE_DATABASE_SUFFIX', '') %>".freeze
       SUPPORTED_ENVIRONMENTS = %w[development test].freeze
       DATABASE_LINE_PATTERN = /\A(\s*database:\s*)(.+?)(\s*(?:#.*)?\n?)\z/
       SECTION_PATTERN = /\A([A-Za-z0-9_]+):(?:\s|$)/

@@ -1,5 +1,3 @@
-# frozen_string_literal: true
-
 require 'fileutils'
 require 'tmpdir'
 
@@ -74,6 +72,7 @@ RSpec.describe Worktrees::Generators::InstallGenerator do
   it 'leaves the new sibling-directory default implicit in the initializer' do
     run_generator
 
+    expect(read_initializer.lines.first).not_to match(/\A#\s*frozen_string_literal:/)
     expect(read_initializer).to include('By default, worktrees go in a sibling "<project>.worktrees" directory.')
     expect(read_initializer).to include('# config.bootstrap_env = false')
     expect(read_initializer).to include('# config.dev_port_range = 3000..3999')

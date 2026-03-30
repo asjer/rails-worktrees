@@ -1,5 +1,3 @@
-# frozen_string_literal: true
-
 RSpec.describe Rails::Worktrees::DatabaseConfigUpdater do
   def patch(content)
     described_class.new(content: content).call

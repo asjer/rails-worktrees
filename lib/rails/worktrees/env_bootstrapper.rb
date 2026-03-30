@@ -1,5 +1,3 @@
-# frozen_string_literal: true
-
 require 'pathname'
 require 'zlib'
 
@@ -14,7 +12,7 @@ module Rails
         attr_accessor :values
       end
 
-      ENV_FILE_NAME = '.env'
+      ENV_FILE_NAME = '.env'.freeze
 
       def initialize(target_dir:, worktree_name:, configuration:)
         @target_dir = target_dir
