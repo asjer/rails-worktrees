@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/asjer/rails-worktrees/compare/v0.2.0...v0.2.1) (2026-03-30)
+
+
+### Bug Fixes
+
+* **puma:** add missing `DEV_PORT` support to config/puma.rb ([3fd71a0](https://github.com/asjer/rails-worktrees/commit/3fd71a04d79732bed4cf626951abe06ddbc01153))
+
 ## [0.2.0](https://github.com/asjer/rails-worktrees/compare/v0.1.1...v0.2.0) (2026-03-30)
 
 
