@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/asjer/rails-worktrees/compare/v0.3.0...v0.4.0) (2026-03-30)
+
+
+### Features
+
+* **delete:** add `bin/wt remove` command to delete worktrees and local branches ([5905723](https://github.com/asjer/rails-worktrees/commit/5905723712e3ca11fd6614633e68855e33bb50e3))
+
 ## [0.3.0](https://github.com/asjer/rails-worktrees/compare/v0.2.2...v0.3.0) (2026-03-30)
 
 
