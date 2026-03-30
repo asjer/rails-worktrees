@@ -106,11 +106,13 @@ say 'Running rails-worktrees installer with --yolo'
 bundle exec rails generate worktrees:install --yolo
 
 [[ -x bin/wt ]] || fail 'Expected bin/wt to exist and be executable'
+[[ -x bin/ob ]] || fail 'Expected bin/ob to exist and be executable'
 [[ -f config/initializers/rails_worktrees.rb ]] || fail 'Expected config/initializers/rails_worktrees.rb to exist'
 [[ ! -f Procfile.dev.worktree.example ]] || fail 'Expected --yolo install not to create Procfile.dev.worktree.example'
 grep -Fq "development<%= ENV.fetch('WORKTREE_DATABASE_SUFFIX', '') %>" config/database.yml || fail 'Expected development database name to include WORKTREE_DATABASE_SUFFIX'
 grep -Fq "test<%= ENV.fetch('WORKTREE_DATABASE_SUFFIX', '') %>" config/database.yml || fail 'Expected test database name to include WORKTREE_DATABASE_SUFFIX'
 grep -Eq '^wt [0-9]+\.[0-9]+\.[0-9]+' < <(bin/wt --version) || fail 'Expected bin/wt --version to return a semantic version'
+grep -Eq '^ob [0-9]+\.[0-9]+\.[0-9]+' < <(bin/ob --version) || fail 'Expected bin/ob --version to return a semantic version'
 grep -Fq 'web: env RUBY_DEBUG_OPEN=true bin/rails server -b 0.0.0.0 -p ${DEV_PORT:-3000}' Procfile.dev || fail 'Expected Procfile.dev to include the DEV_PORT-aware web entry after --yolo'
 grep -Fq 'js: yarn build --watch' Procfile.dev || fail 'Expected Procfile.dev to preserve non-web entries after --yolo'
 grep -Fq "port ENV['DEV_PORT'] || ENV.fetch('PORT', 3000)" config/puma.rb || fail 'Expected config/puma.rb to prefer DEV_PORT after --yolo'
@@ -160,6 +162,12 @@ grep -Fq 'WORKTREE_DATABASE_SUFFIX=_smoke_branch' "$EXPECTED_WORKTREE/.env" || f
 ACTUAL_DEV_PORT="$(grep '^DEV_PORT=' "$EXPECTED_WORKTREE/.env" | cut -d= -f2)"
 grep -Fq "DEV_PORT=$ACTUAL_DEV_PORT" < <(printf '%s\n' "$PREVIEW_OUTPUT") || fail 'Expected wt --print-env DEV_PORT to match the created .env'
 grep -Fq "Port:   $ACTUAL_DEV_PORT" < <(printf '%s\n' "$CREATE_OUTPUT") || fail 'Expected worktree summary to include the chosen DEV_PORT'
+
+say 'Printing a smoke worktree browser URL'
+PRINT_URL_OUTPUT="$(cd "$EXPECTED_WORKTREE" && bin/ob --print-url 'contact?from=nav')"
+printf '%s\n' "$PRINT_URL_OUTPUT"
+
+grep -Fq "http://localhost:$ACTUAL_DEV_PORT/contact?from=nav" < <(printf '%s\n' "$PRINT_URL_OUTPUT") || fail 'Expected bin/ob --print-url to resolve the worktree-local localhost URL'
 
 grep -Fq "$EXPECTED_WORKTREE" < <(git worktree list) || fail 'Expected git worktree list to include the created worktree'
 

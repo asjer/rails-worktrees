@@ -37,6 +37,10 @@ RSpec.describe Worktrees::Generators::InstallGenerator do
     File.read(File.join(tmpdir, 'Procfile.dev'))
   end
 
+  def browser_wrapper_path
+    File.join(tmpdir, 'bin/ob')
+  end
+
   def read_puma_config
     File.read(File.join(tmpdir, 'config/puma.rb'))
   end
@@ -122,6 +126,7 @@ RSpec.describe Worktrees::Generators::InstallGenerator do
     run_generator
 
     expect(File.exist?(File.join(tmpdir, 'bin/wt'))).to be(true)
+    expect(File.exist?(browser_wrapper_path)).to be(false)
     expect(File.exist?(File.join(tmpdir, 'config/initializers/rails_worktrees.rb'))).to be(true)
     expect(File.exist?(File.join(tmpdir, 'Procfile.dev.worktree.example'))).to be(true)
     expect(read_database_yml).to include("demo_app_development#{suffix}_primary")
@@ -146,6 +151,13 @@ RSpec.describe Worktrees::Generators::InstallGenerator do
   end
 
   describe '--yolo' do
+    it 'creates bin/ob for browser shortcuts' do
+      run_generator('--yolo')
+
+      expect(File.exist?(browser_wrapper_path)).to be(true)
+      expect(File.executable?(browser_wrapper_path)).to be(true)
+    end
+
     it 'does not create Procfile.dev.worktree.example' do
       run_generator('--yolo')
 
@@ -251,6 +263,16 @@ RSpec.describe Worktrees::Generators::InstallGenerator do
     end
   end
 
+  describe '--browser' do
+    it 'creates bin/ob without enabling yolo follow-ups' do
+      run_generator('--browser')
+
+      expect(File.exist?(browser_wrapper_path)).to be(true)
+      expect(File.executable?(browser_wrapper_path)).to be(true)
+      expect(File.exist?(File.join(tmpdir, 'Procfile.dev.worktree.example'))).to be(true)
+    end
+  end
+
   it 'writes the conductor workspace override when requested' do
     run_generator('--conductor')
 
@@ -274,10 +296,29 @@ RSpec.describe Worktrees::Generators::InstallGenerator do
       expect(output).to include('============================================')
       expect(output).to include('rails-worktrees installed successfully!')
       expect(output).to include('bin/wt')
+      expect(output).not_to include('bin/ob')
       expect(output).to include('config/initializers/rails_worktrees.rb')
       expect(output).to include('Procfile.dev.worktree.example')
       expect(output).to include('$ bin/wt')
       expect(output).to include('$ bin/wt my-feature')
+    end
+
+    it 'lists bin/ob and browser examples when --browser is used' do
+      output = capture_generator_output('--browser')
+
+      expect(output).to include('bin/ob')
+      expect(output).to include('$ bin/ob')
+      expect(output).to include('$ bin/ob contact')
+      expect(output).to include("$ bin/ob --print-url '?from=nav'")
+    end
+
+    it 'lists bin/ob and browser examples when --yolo is used' do
+      output = capture_generator_output('--yolo')
+
+      expect(output).to include('bin/ob')
+      expect(output).to include('$ bin/ob')
+      expect(output).to include('$ bin/ob contact')
+      expect(output).to include("$ bin/ob --print-url '?from=nav'")
     end
 
     it 'includes a database note when database.yml was updated' do
@@ -420,7 +461,15 @@ RSpec.describe Worktrees::Generators::InstallGenerator do
 
     it 'describes the full --yolo follow-up scope' do
       expect(described_class.class_options.fetch(:yolo).description)
-        .to eq('Apply common Procfile.dev, config/puma.rb, and mise .env follow-up edits when safe')
+        .to eq(
+          'Apply common Procfile.dev, config/puma.rb, and mise .env ' \
+          'follow-up edits when safe; also generate bin/ob'
+        )
+    end
+
+    it 'describes the optional browser helper flag' do
+      expect(described_class.class_options.fetch(:browser).description)
+        .to eq('Generate bin/ob to open localhost:$DEV_PORT routes for this app/worktree')
     end
 
     it 'points at the shared templates directory' do

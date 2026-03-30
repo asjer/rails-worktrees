@@ -1,0 +1,14 @@
+#!/usr/bin/env ruby
+lib = File.expand_path('../lib', __dir__)
+$LOAD_PATH.unshift(lib) unless $LOAD_PATH.include?(lib)
+
+require 'rails/worktrees'
+
+exit(
+  Rails::Worktrees::BrowserCommand.new(
+    argv: ARGV,
+    io: { stdin: $stdin, stdout: $stdout, stderr: $stderr },
+    env: ENV,
+    cwd: Dir.pwd
+  ).run
+)
