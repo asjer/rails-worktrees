@@ -55,6 +55,7 @@
 
 ## [Unreleased]
 
+- Guard the generated initializer so apps can keep `rails-worktrees` in the `:development` Gemfile group without breaking `test` boot.
 - Add a gem-managed `wt` CLI for creating Rails worktrees.
 - Add an optional gem-managed `ob` CLI plus generated `bin/ob` wrapper for opening `localhost:$DEV_PORT` routes.
 - Add a Rails installer generator that creates `bin/wt` and `config/initializers/rails_worktrees.rb`.
