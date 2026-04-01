@@ -7,9 +7,11 @@ require_relative 'worktrees/command'
 require_relative 'worktrees/cli'
 require_relative 'worktrees/browser_command'
 require_relative 'worktrees/database_config_updater'
+require_relative 'worktrees/initializer_updater'
 require_relative 'worktrees/procfile_updater'
 require_relative 'worktrees/mise_toml_updater'
 require_relative 'worktrees/puma_config_updater'
+require_relative 'worktrees/project_maintenance'
 
 module Rails
   # Rails-specific git worktree helpers and installer support.

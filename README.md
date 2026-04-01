@@ -44,6 +44,9 @@ bin/wt                          # auto-pick a name from bundled *.txt lists
 bin/wt my-feature               # use an explicit worktree name
 bin/wt --dry-run my-feature     # preview the full setup without changing anything
 bin/wt --print-env my-feature   # preview DEV_PORT and WORKTREE_DATABASE_SUFFIX
+bin/wt doctor                   # audit install/config drift and basic worktree health
+bin/wt update --dry-run         # preview safe maintenance fixes
+bin/wt update                   # apply safe maintenance fixes for managed files
 bin/wt remove my-feature        # remove a worktree and delete its local branch
 bin/wt delete my-feature        # alias for `bin/wt remove`
 bin/wt remove --force my-feature # also delete an unmerged local branch
@@ -112,6 +115,18 @@ If you want to see what `bin/wt prune` would clean up before saying yes, use `--
 ```bash
 bin/wt prune --dry-run
 ```
+
+### Maintenance commands
+
+`bin/wt` also includes a small maintenance surface for installer drift and checkout health:
+
+- `bin/wt doctor` — audit managed files plus basic Git/worktree health without changing anything
+- `bin/wt update --dry-run` — preview safe file-based fixes
+- `bin/wt update` — apply safe file-based fixes for supported managed files
+
+`bin/wt doctor` checks the generated initializer, `bin/wt`, optional `bin/ob`, supported config files such as `config/database.yml`, `Procfile.dev`, `config/puma.rb`, and `mise.toml`/`.mise.toml`, plus basic repository/worktree conditions like resolving `origin`'s default branch and spotting stale registered worktree paths.
+
+`bin/wt update` is intentionally conservative: it only applies safe file-based fixes for managed templates and supported config shapes. It does **not** delete branches, remove worktrees, or rewrite ambiguous custom files automatically.
 
 
 ### Interactive prompts
