@@ -120,12 +120,6 @@ grep -Fq "port ENV['DEV_PORT'] || ENV.fetch('PORT', 3000)" config/puma.rb || fai
 grep -Fq '[env]' mise.toml || fail 'Expected mise.toml to include an [env] section after --yolo'
 grep -Fq '_.file = ".env"' mise.toml || fail 'Expected mise.toml to load .env after --yolo'
 
-say 'Booting Rails test environment without loading rails-worktrees'
-TEST_BOOT_OUTPUT="$(bundle exec rails runner -e test 'puts %q(TEST_BOOT_OK)')"
-printf '%s\n' "$TEST_BOOT_OUTPUT"
-
-grep -Fq 'TEST_BOOT_OK' < <(printf '%s\n' "$TEST_BOOT_OUTPUT") || fail 'Expected Rails test environment to boot successfully with rails-worktrees in the development group only'
-
 say 'Creating temporary bare origin and pushing main'
 git init --bare --initial-branch=main "$ORIGIN_ROOT/origin.git"
 git add .
@@ -137,6 +131,49 @@ GIT_AUTHOR_NAME='Smoke Test' \
 git remote add origin "$ORIGIN_ROOT/origin.git"
 git push -u origin main
 git remote set-head origin -a
+
+say 'Regressing the generated initializer to simulate an outdated install'
+cat >config/initializers/rails_worktrees.rb <<'EOF'
+Rails::Worktrees.configure do |config|
+  # config.bootstrap_env = false
+end
+EOF
+
+say 'Auditing stale installer files with wt doctor'
+set +e
+DOCTOR_OUTPUT="$(bin/wt doctor 2>&1)"
+DOCTOR_EXIT=$?
+set -e
+printf '%s\n' "$DOCTOR_OUTPUT"
+
+[[ $DOCTOR_EXIT -eq 1 ]] || fail 'Expected wt doctor to report the stale initializer as a fixable issue'
+grep -Fq 'config/initializers/rails_worktrees.rb can be updated automatically.' < <(printf '%s\n' "$DOCTOR_OUTPUT") || fail 'Expected wt doctor to flag the initializer guard drift'
+
+say 'Previewing safe maintenance fixes with wt update --dry-run'
+UPDATE_DRY_RUN_OUTPUT="$(bin/wt update --dry-run)"
+printf '%s\n' "$UPDATE_DRY_RUN_OUTPUT"
+
+grep -Fq 'Would update config/initializers/rails_worktrees.rb' < <(printf '%s\n' "$UPDATE_DRY_RUN_OUTPUT") || fail 'Expected wt update --dry-run to preview the initializer fix'
+grep -Fq 'No changes were made.' < <(printf '%s\n' "$UPDATE_DRY_RUN_OUTPUT") || fail 'Expected wt update --dry-run to leave files untouched'
+
+say 'Applying safe maintenance fixes with wt update'
+UPDATE_OUTPUT="$(bin/wt update)"
+printf '%s\n' "$UPDATE_OUTPUT"
+
+grep -Fq 'Update complete' < <(printf '%s\n' "$UPDATE_OUTPUT") || fail 'Expected wt update to finish successfully'
+grep -Fq "Gem.loaded_specs.key?('rails-worktrees')" config/initializers/rails_worktrees.rb || fail 'Expected wt update to restore the current initializer guard'
+
+say 'Confirming wt doctor reports a healthy checkout after wt update'
+HEALTHY_DOCTOR_OUTPUT="$(bin/wt doctor 2>&1)"
+printf '%s\n' "$HEALTHY_DOCTOR_OUTPUT"
+
+grep -Fq 'Doctor found no issues.' < <(printf '%s\n' "$HEALTHY_DOCTOR_OUTPUT") || fail 'Expected wt doctor to report a healthy checkout after wt update'
+
+say 'Booting Rails test environment after wt update repaired the initializer'
+TEST_BOOT_OUTPUT="$(bundle exec rails runner -e test 'puts %q(TEST_BOOT_OK)')"
+printf '%s\n' "$TEST_BOOT_OUTPUT"
+
+grep -Fq 'TEST_BOOT_OK' < <(printf '%s\n' "$TEST_BOOT_OUTPUT") || fail 'Expected Rails test environment to boot successfully after wt update repaired the initializer'
 
 say 'Previewing smoke worktree environment'
 PREVIEW_OUTPUT="$(WT_WORKSPACES_ROOT="$WORKSPACES_ROOT" bin/wt --print-env smoke-branch)"

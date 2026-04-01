@@ -11,6 +11,8 @@ module Rails
     # rubocop:disable Metrics/ClassLength
     class Command
       REMOVE_SUBCOMMANDS = %w[remove delete].freeze
+      DOCTOR_SUBCOMMAND = 'doctor'.freeze
+      UPDATE_SUBCOMMAND = 'update'.freeze
 
       include GitOperations
       include EnvironmentSupport
@@ -69,7 +71,17 @@ module Rails
         @argv.first == 'prune'
       end
 
+      def doctor_subcommand?
+        @argv.first == DOCTOR_SUBCOMMAND
+      end
+
+      def update_subcommand?
+        @argv.first == UPDATE_SUBCOMMAND
+      end
+
       def execute_requested_command
+        return execute_doctor_command if doctor_subcommand?
+        return execute_update_command if update_subcommand?
         return execute_remove_command if remove_subcommand?
         return execute_prune_command if prune_subcommand?
         return usage_error if @argv.length > 1 || force?
@@ -144,8 +156,68 @@ module Rails
         0
       end
 
+      # rubocop:disable Metrics/MethodLength
+      def execute_doctor_command
+        validate_doctor_args!
+
+        unless git_success?('rev-parse', '--is-inside-work-tree')
+          checks = [doctor_check(category: :git, status: :warning,
+                                 headline: 'Run wt doctor from inside a Git repository.')]
+          print_doctor_report(checks)
+          return 1
+        end
+
+        repository = resolve_repository_context
+        checks = project_maintenance_report(repository[:current_root]).checks + doctor_worktree_checks(repository)
+        print_doctor_report(checks)
+
+        checks.any? { |check| check.fixable? || check.warning? } ? 1 : 0
+      end
+      # rubocop:enable Metrics/MethodLength
+
+      # rubocop:disable Metrics/MethodLength, Metrics/AbcSize
+      def execute_update_command
+        require_git_repo
+        validate_update_args!
+        announce_dry_run if dry_run?
+
+        current_root = resolve_repository_context[:current_root]
+        report = project_maintenance_report(current_root)
+        updated_count = 0
+        identical_count = 0
+        skipped_count = 0
+
+        report.checks.each do |check|
+          if check.fixable?
+            apply_maintenance_check(check, current_root: current_root)
+            updated_count += 1
+          elsif check.ok?
+            identical_count += 1
+            info(check.headline)
+          else
+            skipped_count += 1
+            warning(check.headline)
+            check.messages.each { |message| info(message) }
+          end
+        end
+
+        complete_update(updated_count:, identical_count:, skipped_count:)
+      end
+      # rubocop:enable Metrics/MethodLength, Metrics/AbcSize
+
       def validate_prune_args!
         raise Error, 'Usage: wt prune' unless @argv.length == 1
+        raise Error, 'The --force flag is only supported with wt remove.' if force?
+      end
+
+      def validate_doctor_args!
+        raise Error, 'Usage: wt doctor' unless @argv.length == 1
+        raise Error, 'wt doctor does not support --dry-run.' if dry_run?
+        raise Error, 'The --force flag is only supported with wt remove.' if force?
+      end
+
+      def validate_update_args!
+        raise Error, 'Usage: wt update [--dry-run]' unless @argv.length == 1
         raise Error, 'The --force flag is only supported with wt remove.' if force?
       end
 
@@ -343,6 +415,145 @@ module Rails
       def worktree_name_for_branch(branch_name)
         branch_name.delete_prefix("#{@configuration.branch_prefix}/")
       end
+
+      def project_maintenance_report(root)
+        ::Rails::Worktrees::ProjectMaintenance.new(root: root).call
+      end
+
+      def doctor_worktree_checks(repository)
+        [
+          doctor_check(
+            category: :git,
+            status: :ok,
+            headline: "Git repository detected at #{repository[:current_root]}."
+          ),
+          default_branch_doctor_check,
+          stale_worktree_doctor_check
+        ]
+      end
+
+      def default_branch_doctor_check
+        doctor_check(
+          category: :git,
+          status: :ok,
+          headline: "origin default branch resolves to '#{resolve_default_branch}'."
+        )
+      rescue Error => e
+        doctor_check(category: :git, status: :warning, headline: e.message)
+      end
+
+      # rubocop:disable Metrics/MethodLength
+      def stale_worktree_doctor_check
+        stale_paths = worktree_entries.reject { |entry| File.directory?(entry[:path]) }
+        if stale_paths.empty?
+          doctor_check(category: :worktree, status: :ok, headline: 'No stale registered worktree paths found.')
+        else
+          doctor_check(
+            category: :worktree,
+            status: :warning,
+            headline: "Found #{stale_paths.length} stale registered worktree " \
+                      "path#{'s' unless stale_paths.length == 1}.",
+            messages: stale_paths.map { |entry| entry[:path] }
+          )
+        end
+      end
+      # rubocop:enable Metrics/MethodLength
+
+      # rubocop:disable Metrics/MethodLength
+      def doctor_check(category:, status:, headline:, messages: [])
+        ::Rails::Worktrees::ProjectMaintenance::Check.new(
+          identifier: nil,
+          category: category,
+          status: status,
+          headline: headline,
+          messages: messages,
+          relative_path: nil,
+          updated_content: nil,
+          make_executable: false,
+          apply_messages: []
+        )
+      end
+      # rubocop:enable Metrics/MethodLength
+
+      # rubocop:disable Metrics/AbcSize
+      def apply_maintenance_check(check, current_root:)
+        if dry_run?
+          info("Would update #{check.relative_path}")
+          Array(check.apply_messages).each { |message| info(message) }
+          return
+        end
+
+        path = maintenance_destination_path(check.relative_path, current_root)
+        FileUtils.mkdir_p(File.dirname(path))
+        File.write(path, check.updated_content)
+        FileUtils.chmod(0o755, path) if check.make_executable
+
+        Array(check.apply_messages).each { |message| info(message) }
+      end
+
+      def maintenance_destination_path(relative_path, current_root)
+        root_path = File.realpath(current_root)
+        path = File.expand_path(relative_path, root_path)
+        assert_within_root!(path, root_path, "Refusing to write outside of repository root: #{path}")
+        parent_path = nearest_existing_parent(File.dirname(path))
+        assert_parent_within_root!(parent_path, root_path, path)
+        assert_not_symlink!(path)
+        path
+      end
+
+      def assert_within_root!(path, root_path, message)
+        raise Error, message unless within_root?(path, root_path)
+      end
+
+      def assert_parent_within_root!(parent_path, root_path, path)
+        assert_within_root!(
+          parent_path,
+          root_path,
+          "Refusing to write through symlinked directory outside repository root: #{path}"
+        )
+      end
+
+      def assert_not_symlink!(path)
+        raise Error, "Refusing to overwrite symlinked path: #{path}" if File.symlink?(path)
+      end
+
+      def within_root?(path, root_path)
+        path == root_path || path.start_with?("#{root_path}#{File::SEPARATOR}")
+      end
+
+      def nearest_existing_parent(path)
+        candidate = path
+        until File.exist?(candidate)
+          parent = File.dirname(candidate)
+          return candidate if parent == candidate
+
+          candidate = parent
+        end
+
+        File.realpath(candidate)
+      end
+      # rubocop:enable Metrics/AbcSize
+
+      # rubocop:disable Metrics/MethodLength
+      def complete_update(updated_count:, identical_count:, skipped_count:)
+        if dry_run?
+          success('Dry run complete')
+          info("Would update #{updated_count} file#{'s' unless updated_count == 1}.")
+          info('No changes were made.')
+          return 0
+        end
+
+        success('Update complete')
+        info(
+          [
+            "updated: #{updated_count}",
+            "already up to date: #{identical_count}",
+            "skipped: #{skipped_count}"
+          ].join(', ')
+        )
+        0
+      end
+      # rubocop:enable Metrics/MethodLength
     end
     # rubocop:enable Metrics/ClassLength
   end

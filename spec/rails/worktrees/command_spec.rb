@@ -29,6 +29,27 @@ RSpec.describe Rails::Worktrees::Command do
   def origin_path = File.join(tmpdir, 'origin.git')
   def default_workspaces_root = File.join(tmpdir, 'app.worktrees')
 
+  def write_repo_file(relative_path, content)
+    absolute_path = File.join(repo_path, relative_path)
+    FileUtils.mkdir_p(File.dirname(absolute_path))
+    File.write(absolute_path, content)
+    absolute_path
+  end
+
+  def managed_wt_template
+    File.read(File.expand_path('../../../lib/generators/rails/worktrees/templates/bin/wt', __dir__))
+  end
+
+  def install_worktrees_files(initializer: Rails::Worktrees::InitializerUpdater.default_content)
+    wt_path = write_repo_file('bin/wt', managed_wt_template)
+    FileUtils.chmod(0o755, wt_path)
+    write_repo_file('config/initializers/rails_worktrees.rb', initializer)
+    write_repo_file(
+      'config/database.yml',
+      "development:\n  database: demo_app_development<%= ENV.fetch('WORKTREE_DATABASE_SUFFIX', '') %>\n"
+    )
+  end
+
   def build_command(argv: [], env: {}, cwd: repo_path, **io_overrides)
     # Use only path-related variables from the host to allow tools like `git` to run
     base_env = ENV.to_h.slice('PATH', 'HOME')
@@ -390,6 +411,90 @@ RSpec.describe Rails::Worktrees::Command do
       expect(command).to have_received(:ensure_local_branch_removable!).with('🚂/feature-one', force: true)
       expect(command).to have_received(:info).with("Deleting local branch '🚂/feature-one'")
       expect(command).to have_received(:git!).with('branch', '-D', '🚂/feature-one')
+    end
+
+    it 'reports doctor issues when run outside a git repository' do
+      err = StringIO.new
+
+      expect(build_command(argv: ['doctor'], cwd: tmpdir, stderr: err).run).to eq(1)
+
+      expect(err.string).to include('Run wt doctor from inside a Git repository.')
+    end
+
+    it 'reports fixable installer drift and becomes healthy after wt update' do
+      install_worktrees_files(initializer: <<~RUBY)
+        Rails::Worktrees.configure do |config|
+          config.bootstrap_env = false
+        end
+      RUBY
+      doctor_out = StringIO.new
+      doctor_err = StringIO.new
+
+      expect(build_command(argv: ['doctor'], stdout: doctor_out, stderr: doctor_err).run).to eq(1)
+      expect(doctor_err.string).to include('config/initializers/rails_worktrees.rb can be updated automatically.')
+
+      expect(build_command(argv: ['update']).run).to eq(0)
+
+      refreshed_out = StringIO.new
+      refreshed_err = StringIO.new
+      expect(build_command(argv: ['doctor'], stdout: refreshed_out, stderr: refreshed_err).run).to eq(0)
+      expect(refreshed_out.string).to include('Doctor found no issues.')
+    end
+
+    it 'dry-runs wt update without changing files' do
+      install_worktrees_files(initializer: <<~RUBY)
+        Rails::Worktrees.configure do |config|
+          config.bootstrap_env = false
+        end
+      RUBY
+      original_initializer = File.read(File.join(repo_path, 'config/initializers/rails_worktrees.rb'))
+      out = StringIO.new
+
+      expect(build_command(argv: ['update', '--dry-run'], stdout: out).run).to eq(0)
+
+      expect(File.read(File.join(repo_path, 'config/initializers/rails_worktrees.rb'))).to eq(original_initializer)
+      expect(out.string).to include('Would update config/initializers/rails_worktrees.rb')
+      expect(out.string).to include('Dry run complete')
+      expect(out.string).to include('No changes were made.')
+    end
+
+    it 'restores executable permissions for managed wrapper scripts during wt update' do
+      install_worktrees_files
+      wt_path = File.join(repo_path, 'bin', 'wt')
+      FileUtils.chmod(0o644, wt_path)
+
+      expect(File.executable?(wt_path)).to be(false)
+      expect(build_command(argv: ['update']).run).to eq(0)
+      expect(File.executable?(wt_path)).to be(true)
+    end
+
+    it 'resolves repository context once when applying wt update' do
+      install_worktrees_files(initializer: <<~RUBY)
+        Rails::Worktrees.configure do |config|
+          config.bootstrap_env = false
+        end
+      RUBY
+      out = StringIO.new
+      command = build_command(argv: ['update', '--dry-run'], stdout: out)
+
+      allow(command).to receive(:resolve_repository_context).and_call_original
+
+      expect(command.run).to eq(0)
+      expect(command).to have_received(:resolve_repository_context).once
+    end
+
+    it 'refuses to overwrite a managed symlink during wt update' do
+      install_worktrees_files
+      outside_target = File.join(tmpdir, 'outside-wt')
+      File.write(outside_target, "#!/usr/bin/env ruby\nputs 'outside'\n")
+      FileUtils.rm_f(File.join(repo_path, 'bin', 'wt'))
+      File.symlink(outside_target, File.join(repo_path, 'bin', 'wt'))
+      err = StringIO.new
+
+      expect(build_command(argv: ['update'], stderr: err).run).to eq(1)
+
+      expect(err.string).to include('Refusing to overwrite symlinked path')
+      expect(File.read(outside_target)).to eq("#!/usr/bin/env ruby\nputs 'outside'\n")
     end
 
     context 'with the implicit project-relative default root' do

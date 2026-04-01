@@ -32,6 +32,8 @@ module Rails
             Usage: wt [worktree-name]
                    wt --dry-run [worktree-name]
                    wt --print-env <worktree-name>
+                   wt doctor
+                   wt update [--dry-run]
                    wt remove [--dry-run] [--force] <worktree-name>
                    wt delete [--dry-run] [--force] <worktree-name>
                    wt prune [--dry-run]
@@ -48,6 +50,8 @@ module Rails
               wt my-feature      Use an explicit worktree name
               wt --dry-run my-feature
               wt --print-env my-feature
+              wt doctor
+              wt update --dry-run
               wt remove my-feature
               wt remove --force my-feature
               wt prune
@@ -57,6 +61,8 @@ module Rails
               - when workspace_root or WT_WORKSPACES_ROOT is set, creates worktrees in <root>/<project>/<name>
               - always uses the branch name #{@configuration.branch_prefix}/<name>
               - bases new branches on the repository's origin default branch
+              - wt doctor audits install/config drift plus basic worktree health without changing files
+              - wt update applies safe file-based fixes for managed installer artifacts and config hints
               - wt remove/delete can run from the main checkout or any sibling worktree, but never remove the worktree you're currently in
               - wt prune removes merged worktrees created by wt while skipping the main checkout and the checkout you're in
               - auto-discovers bundled *.txt files from #{@configuration.name_sources_path}
@@ -146,6 +152,29 @@ module Rails
           info('No changes were made.')
           0
         end
+
+        # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
+        def print_doctor_report(checks)
+          checks.each do |check|
+            printer = check.ok? ? :info : :warning
+            send(printer, "#{check.category}: #{check.headline}")
+            Array(check.messages).each { |message| info(message) }
+          end
+
+          fixable_count = checks.count(&:fixable?)
+          warning_count = checks.count(&:warning?)
+
+          if fixable_count.zero? && warning_count.zero?
+            success('Doctor found no issues.')
+          else
+            warning(
+              "Doctor found #{fixable_count} fixable issue#{'s' unless fixable_count == 1} and " \
+              "#{warning_count} warning#{'s' unless warning_count == 1}."
+            )
+            info('Run `wt update --dry-run` to preview safe fixes.') if fixable_count.positive?
+          end
+        end
+        # rubocop:enable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
 
         def warning(message)
           @stderr.puts("⚠️  #{message}")
