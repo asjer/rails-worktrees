@@ -11,13 +11,15 @@
 ## Installation
 
 ```bash
-bundle add rails-worktrees
+bundle add rails-worktrees --group development
 bin/rails generate worktrees:install
 # or, to also generate bin/ob without the yolo follow-ups:
 bin/rails generate worktrees:install --browser
 # or, to apply the common Procfile.dev + Puma + mise follow-ups automatically:
 bin/rails generate worktrees:install --yolo
 ```
+
+The generated initializer checks that `rails-worktrees` is actually loaded before it calls `Rails::Worktrees.configure`, so the app can still boot in environments like `test` when the gem is only bundled for `:development`.
 
 The installer adds:
 
@@ -130,6 +132,8 @@ Worktree names must not contain `/` or whitespace, must not be `.` or `..`, and 
 ### Configuration
 
 The installer generates `config/initializers/rails_worktrees.rb` where you can override:
+
+The initializer becomes a no-op whenever `rails-worktrees` is not loaded in the current bundle groups.
 
 | Option | Default | Description |
 |--------|---------|-------------|

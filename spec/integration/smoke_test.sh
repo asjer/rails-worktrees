@@ -76,12 +76,12 @@ rails _${RAILS_VERSION}_ new "$APP_DIR" \
   --skip-bootsnap \
   --skip-bundle
 
-say 'Adding local rails-worktrees gem to Gemfile'
+say 'Adding local rails-worktrees gem to the development group in Gemfile'
 ruby - "$APP_DIR/Gemfile" "$REPO_ROOT" <<'RUBY'
 path, repo_root = ARGV
 content = File.read(path)
 updated = content.sub(/^(gem "rails", .+\n)/) do |match|
-  %(#{match}gem "rails-worktrees", path: "#{repo_root}"\n)
+  %(#{match}gem "rails-worktrees", path: "#{repo_root}", group: :development\n)
 end
 abort('Could not find Rails gem declaration in Gemfile') if updated == content
 File.write(path, updated)
@@ -119,6 +119,12 @@ grep -Fq 'js: yarn build --watch' Procfile.dev || fail 'Expected Procfile.dev to
 grep -Fq "port ENV['DEV_PORT'] || ENV.fetch('PORT', 3000)" config/puma.rb || fail 'Expected config/puma.rb to prefer DEV_PORT after --yolo'
 grep -Fq '[env]' mise.toml || fail 'Expected mise.toml to include an [env] section after --yolo'
 grep -Fq '_.file = ".env"' mise.toml || fail 'Expected mise.toml to load .env after --yolo'
+
+say 'Booting Rails test environment without loading rails-worktrees'
+TEST_BOOT_OUTPUT="$(bundle exec rails runner -e test 'puts %q(TEST_BOOT_OK)')"
+printf '%s\n' "$TEST_BOOT_OUTPUT"
+
+grep -Fq 'TEST_BOOT_OK' < <(printf '%s\n' "$TEST_BOOT_OUTPUT") || fail 'Expected Rails test environment to boot successfully with rails-worktrees in the development group only'
 
 say 'Creating temporary bare origin and pushing main'
 git init --bare --initial-branch=main "$ORIGIN_ROOT/origin.git"

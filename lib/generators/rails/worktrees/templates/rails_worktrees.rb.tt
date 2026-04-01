@@ -1,19 +1,23 @@
-Rails::Worktrees.configure do |config|
+if Gem.loaded_specs.key?('rails-worktrees') &&
+    defined?(Rails::Worktrees) &&
+    Rails::Worktrees.respond_to?(:configure)
+  Rails::Worktrees.configure do |config|
 <% if options['conductor'] -%>
-  config.workspace_root = <%= conductor_workspace_root %>
+    config.workspace_root = <%= conductor_workspace_root %>
 <% else -%>
-  # By default, worktrees go in a sibling "<project>.worktrees" directory.
-  # Uncomment to override with a custom parent directory that uses <root>/<project>/<name>.
-  # config.workspace_root = File.expand_path('~/worktrees')
+    # By default, worktrees go in a sibling "<project>.worktrees" directory.
+    # Uncomment to override with a custom parent directory that uses <root>/<project>/<name>.
+    # config.workspace_root = File.expand_path('~/worktrees')
 <% end -%>
-  # config.bootstrap_env = false
-  # config.dev_port_range = 3000..3999
-  # config.worktree_database_suffix_max_length = 18
-  # config.branch_prefix = '🚂'
-  # config.name_sources_path = Rails.root.join('config/worktree_names').to_s
-  # config.used_names_file = File.join(
-  #   ENV.fetch('XDG_STATE_HOME', File.expand_path('~/.local/state')),
-  #   'rails-worktrees',
-  #   'used-names.tsv'
-  # )
+    # config.bootstrap_env = false
+    # config.dev_port_range = 3000..3999
+    # config.worktree_database_suffix_max_length = 18
+    # config.branch_prefix = '🚂'
+    # config.name_sources_path = Rails.root.join('config/worktree_names').to_s
+    # config.used_names_file = File.join(
+    #   ENV.fetch('XDG_STATE_HOME', File.expand_path('~/.local/state')),
+    #   'rails-worktrees',
+    #   'used-names.tsv'
+    # )
+  end
 end
