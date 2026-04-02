@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.5.0](https://github.com/asjer/rails-worktrees/compare/v0.4.0...v0.5.0) (2026-04-02)
+
+
+### Features
+
+* **maintenance:** add doctor and update maintenance commands ([fce44f7](https://github.com/asjer/rails-worktrees/commit/fce44f757ce9835eb663010f30a192c23f82080c))
+
+
+### Bug Fixes
+
+* **install:** support development-only gem installs ([bf9e742](https://github.com/asjer/rails-worktrees/commit/bf9e74260a88ba37674a5318b48ad5c93f1c0399))
+
 ## [0.4.0](https://github.com/asjer/rails-worktrees/compare/v0.3.0...v0.4.0) (2026-03-30)
 
 
