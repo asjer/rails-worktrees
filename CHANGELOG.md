@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.1](https://github.com/asjer/rails-worktrees/compare/v0.5.0...v0.5.1) (2026-04-02)
+
+
+### Bug Fixes
+
+* **initializer:** simplify generated config wiring ([bd7fd50](https://github.com/asjer/rails-worktrees/commit/bd7fd506f2c0106a0bd188e36b31329a9de2acbf))
+
 ## [0.5.0](https://github.com/asjer/rails-worktrees/compare/v0.4.0...v0.5.0) (2026-04-02)
 
 
