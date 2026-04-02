@@ -2,6 +2,16 @@ module Rails
   module Worktrees
     # Stores application-level settings for the wt command.
     class Configuration
+      CONFIGURABLE_ATTRIBUTES = %i[
+        bootstrap_env
+        workspace_root
+        dev_port_range
+        branch_prefix
+        name_sources_path
+        used_names_file
+        worktree_database_suffix_max_length
+      ].freeze
+
       DEFAULT_BOOTSTRAP_ENV = true
       DEFAULT_BRANCH_PREFIX = '🚂'.freeze
       DEFAULT_DEV_PORT_RANGE = (3000..3999)

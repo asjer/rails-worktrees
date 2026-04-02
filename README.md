@@ -19,7 +19,7 @@ bin/rails generate worktrees:install --browser
 bin/rails generate worktrees:install --yolo
 ```
 
-The generated initializer checks that `rails-worktrees` is actually loaded before it calls `Rails::Worktrees.configure`, so the app can still boot in environments like `test` when the gem is only bundled for `:development`.
+The generated initializer writes app config under `Rails.application.config.x.rails_worktrees`, so the file stays safe to load even in environments like `test` where the gem is only bundled for `:development`. When `rails-worktrees` is loaded, the gem applies those settings for both the CLI and in-process Rails usage.
 
 The installer adds:
 
@@ -148,7 +148,7 @@ Worktree names must not contain `/` or whitespace, must not be `.` or `..`, and 
 
 The installer generates `config/initializers/rails_worktrees.rb` where you can override:
 
-The initializer becomes a no-op whenever `rails-worktrees` is not loaded in the current bundle groups.
+The initializer stays app-owned and gem-agnostic; `rails-worktrees` reads those settings whenever the gem is present in the current bundle groups.
 
 | Option | Default | Description |
 |--------|---------|-------------|

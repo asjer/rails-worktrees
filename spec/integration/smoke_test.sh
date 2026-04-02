@@ -161,7 +161,7 @@ UPDATE_OUTPUT="$(bin/wt update)"
 printf '%s\n' "$UPDATE_OUTPUT"
 
 grep -Fq 'Update complete' < <(printf '%s\n' "$UPDATE_OUTPUT") || fail 'Expected wt update to finish successfully'
-grep -Fq "Gem.loaded_specs.key?('rails-worktrees')" config/initializers/rails_worktrees.rb || fail 'Expected wt update to restore the current initializer guard'
+grep -Fq 'Rails.application.config.x.rails_worktrees.tap do |config|' config/initializers/rails_worktrees.rb || fail 'Expected wt update to restore the current managed initializer format'
 
 say 'Confirming wt doctor reports a healthy checkout after wt update'
 HEALTHY_DOCTOR_OUTPUT="$(bin/wt doctor 2>&1)"
