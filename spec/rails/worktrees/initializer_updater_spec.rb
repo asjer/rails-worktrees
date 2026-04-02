@@ -4,7 +4,7 @@ RSpec.describe Rails::Worktrees::InitializerUpdater do
   end
 
   describe '#call' do
-    it 'wraps an unguarded initializer with the current gem-loading guard' do
+    it 'wraps an unguarded initializer with the current managed initializer format' do
       result = patch(<<~RUBY)
         Rails::Worktrees.configure do |config|
           config.bootstrap_env = false
@@ -13,12 +13,12 @@ RSpec.describe Rails::Worktrees::InitializerUpdater do
 
       expect(result).to be_changed
       expect(result.status).to eq(:updated)
-      expect(result.content).to include("Gem.loaded_specs.key?('rails-worktrees')")
-      expect(result.content).to include('Rails::Worktrees.respond_to?(:configure)')
-      expect(result.content).to include('  Rails::Worktrees.configure do |config|')
+      expect(result.content).to start_with('Rails.application.config.x.rails_worktrees.tap do |config|')
+      expect(result.content).to include('  config.bootstrap_env = false')
+      expect(result.content).not_to include('Rails::Worktrees.configure do |config|')
     end
 
-    it 'upgrades the older defined? guard to the current safety guard' do
+    it 'upgrades the older defined? guard to the current managed initializer format' do
       result = patch(<<~RUBY)
         if defined?(Rails::Worktrees)
           Rails::Worktrees.configure do |config|
@@ -28,11 +28,11 @@ RSpec.describe Rails::Worktrees::InitializerUpdater do
       RUBY
 
       expect(result).to be_changed
-      expect(result.content).to include("Gem.loaded_specs.key?('rails-worktrees')")
+      expect(result.content).to start_with('Rails.application.config.x.rails_worktrees.tap do |config|')
       expect(result.content).not_to start_with('if defined?(Rails::Worktrees)')
     end
 
-    it 'does not treat a partially present current guard as already updated' do
+    it 'does not treat a partially present older guard as already updated' do
       result = patch(<<~RUBY)
         if Gem.loaded_specs.key?('rails-worktrees') &&
             Rails::Worktrees.respond_to?(:configure)
@@ -44,12 +44,12 @@ RSpec.describe Rails::Worktrees::InitializerUpdater do
 
       expect(result).to be_changed
       expect(result.status).to eq(:updated)
-      expect(result.content).to include('    defined?(Rails::Worktrees) &&')
-      expect(result.content.scan("Gem.loaded_specs.key?('rails-worktrees')").length).to eq(1)
-      expect(result.content).not_to include("  if Gem.loaded_specs.key?('rails-worktrees')")
+      expect(result.content).to start_with('Rails.application.config.x.rails_worktrees.tap do |config|')
+      expect(result.content).to include('  config.bootstrap_env = false')
+      expect(result.content).not_to include("Gem.loaded_specs.key?('rails-worktrees')")
     end
 
-    it 'is idempotent when the current guard is already present' do
+    it 'is idempotent when the current managed initializer format is already present' do
       content = described_class.default_content
 
       result = patch(content)
@@ -84,6 +84,32 @@ RSpec.describe Rails::Worktrees::InitializerUpdater do
       expect(result).to be_changed
       expect(result.status).to eq(:updated)
       expect(result.content).to eq(described_class.default_content)
+    end
+
+    it 'keeps the comment indentation stable when upgrading the old managed format' do
+      result = patch(<<~RUBY)
+        if Gem.loaded_specs.key?('rails-worktrees') &&
+            defined?(Rails::Worktrees) &&
+            Rails::Worktrees.respond_to?(:configure)
+          Rails::Worktrees.configure do |config|
+            # config.used_names_file = File.join(
+            #   ENV.fetch('XDG_STATE_HOME', File.expand_path('~/.local/state')),
+            #   'rails-worktrees',
+            #   'used-names.tsv'
+            # )
+          end
+        end
+      RUBY
+
+      expect(result.content).to include(<<~RUBY.chomp)
+        Rails.application.config.x.rails_worktrees.tap do |config|
+          # config.used_names_file = File.join(
+          #   ENV.fetch('XDG_STATE_HOME', File.expand_path('~/.local/state')),
+          #   'rails-worktrees',
+          #   'used-names.tsv'
+          # )
+        end
+      RUBY
     end
 
     it 'fills a whitespace-only initializer with the managed default content' do

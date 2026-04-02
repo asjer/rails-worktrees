@@ -138,15 +138,12 @@ RSpec.describe Worktrees::Generators::InstallGenerator do
 
     expect(read_initializer.lines.first).not_to match(/\A#\s*frozen_string_literal:/)
     expect(read_initializer).to start_with(<<~RUBY)
-      if Gem.loaded_specs.key?('rails-worktrees') &&
-          defined?(Rails::Worktrees) &&
-          Rails::Worktrees.respond_to?(:configure)
-        Rails::Worktrees.configure do |config|
+      Rails.application.config.x.rails_worktrees.tap do |config|
     RUBY
     expect(read_initializer).to include('By default, worktrees go in a sibling "<project>.worktrees" directory.')
     expect(read_initializer).to include('# config.bootstrap_env = false')
     expect(read_initializer).to include('# config.dev_port_range = 3000..3999')
-    expect(read_initializer.rstrip).to end_with("  end\nend")
+    expect(read_initializer.rstrip).to end_with('end')
     expect(read_initializer).not_to include("config.workspace_root = File.expand_path('~/Sites/conductor/workspaces')")
   end
 
@@ -283,7 +280,7 @@ RSpec.describe Worktrees::Generators::InstallGenerator do
   it 'writes the conductor workspace override when requested' do
     run_generator('--conductor')
 
-    expect(read_initializer).to include("Gem.loaded_specs.key?('rails-worktrees')")
+    expect(read_initializer).to start_with('Rails.application.config.x.rails_worktrees.tap do |config|')
     expect(read_initializer).to include("config.workspace_root = File.expand_path('~/Sites/conductor/workspaces')")
   end
 

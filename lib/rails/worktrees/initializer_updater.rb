@@ -2,7 +2,7 @@ require 'erb'
 
 module Rails
   module Worktrees
-    # Safely updates the generated initializer to use the current gem-loading guard.
+    # Safely updates the generated initializer to use the current managed app-config format.
     # rubocop:disable Metrics/ClassLength
     class InitializerUpdater
       Result = Struct.new(:content, :changed, :status, :messages) do
@@ -12,18 +12,13 @@ module Rails
       end
 
       TEMPLATE_PATH = File.expand_path('../../generators/rails/worktrees/templates/rails_worktrees.rb.tt', __dir__)
-      CURRENT_GUARD_LINES = [
-        "if Gem.loaded_specs.key?('rails-worktrees') &&",
-        '    defined?(Rails::Worktrees) &&',
-        '    Rails::Worktrees.respond_to?(:configure)'
-      ].freeze
+      CURRENT_WRAPPER_CALL = 'Rails.application.config.x.rails_worktrees.tap do |config|'.freeze
+      CONFIGURE_CALL = 'Rails::Worktrees.configure do |config|'.freeze
       KNOWN_GUARD_FRAGMENTS = [
         "Gem.loaded_specs.key?('rails-worktrees')",
         'defined?(Rails::Worktrees)',
         'Rails::Worktrees.respond_to?(:configure)'
       ].freeze
-      CONFIGURE_CALL = 'Rails::Worktrees.configure do |config|'.freeze
-      LEGACY_GUARD = /\Aif defined\?\(Rails::Worktrees\)\n(?<body>.*)\nend\z/m
 
       def self.default_content = new(content: '').send(:render_default_template)
 
@@ -46,7 +41,7 @@ module Rails
           @content,
           false,
           :identical,
-          ['config/initializers/rails_worktrees.rb already uses the current safety guard.']
+          ['config/initializers/rails_worktrees.rb already uses the current managed initializer format.']
         )
       end
 
@@ -55,7 +50,7 @@ module Rails
           content,
           content != @content,
           :updated,
-          ['Updated config/initializers/rails_worktrees.rb to use the current safety guard.']
+          ['Updated config/initializers/rails_worktrees.rb to use the current managed initializer format.']
         )
       end
 
@@ -70,19 +65,20 @@ module Rails
 
       def blank_content? = @content.to_s.strip.empty?
 
-      def current_guard_present?
-        !extract_known_guard_body(@content.to_s.strip.lines, required_guard_lines: CURRENT_GUARD_LINES).nil?
+      def current_wrapper_present?
+        !extract_current_wrapper_body(@content.to_s.strip.lines).nil?
       end
 
-      def wrapped_body = extract_existing_body&.then { |body| normalize_body(body) }
+      def normalized_body = extract_existing_body&.then { |body| normalize_body(body) }
 
       def extract_existing_body
         stripped = @content.to_s.strip
         return if stripped.empty?
 
-        return Regexp.last_match[:body] if stripped.match(LEGACY_GUARD)
+        body = extract_current_wrapper_body(stripped.lines)
+        return body if body
 
-        body = extract_known_guard_body(stripped.lines)
+        body = extract_guarded_configure_body(stripped.lines)
         return body if body
 
         body = extract_plain_configure_body(stripped.lines)
@@ -91,25 +87,25 @@ module Rails
         nil
       end
 
-      # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
-      def extract_known_guard_body(lines, required_guard_lines: nil)
-        return if lines.empty? || lines.last.strip != 'end'
+      def extract_current_wrapper_body(lines)
+        return unless lines.first&.strip == CURRENT_WRAPPER_CALL && lines.last&.strip == 'end'
+
+        lines[1...-1].join.rstrip
+      end
+
+      def extract_guarded_configure_body(lines)
+        return unless guarded_configure_block?(lines)
 
         configure_index = lines.index { |line| line.strip == CONFIGURE_CALL }
-        return unless configure_index
+        return unless guarded_configure_lines(lines, configure_index).all? { |line| known_guard_line?(line) }
 
-        guard_lines = lines[0...configure_index].reject { |line| line.strip.empty? }.map(&:rstrip)
-        return unless guard_lines.all? { |line| known_guard_line?(line) }
-        return if required_guard_lines && guard_lines != required_guard_lines
-
-        lines[configure_index...-1].join.rstrip
+        lines[(configure_index + 1)...-2].join.rstrip
       end
-      # rubocop:enable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
 
       def extract_plain_configure_body(lines)
         return unless lines.first&.strip == CONFIGURE_CALL && lines.last&.strip == 'end'
 
-        lines.join.rstrip
+        lines[1...-1].join.rstrip
       end
 
       def known_guard_line?(line)
@@ -124,13 +120,17 @@ module Rails
         body_lines = body.rstrip.lines
         return '' if body_lines.empty?
 
-        return body.rstrip if body_lines.first.start_with?('  ')
+        minimum_indent = body_indent(body_lines)
 
-        body_lines.map { |line| line.strip.empty? ? line : "  #{line}" }.join.rstrip
+        body_lines.map do |line|
+          next line if line.strip.empty?
+
+          normalize_body_line(line, minimum_indent)
+        end.join.rstrip
       end
 
       def rebuild_content(body)
-        content = [CURRENT_GUARD_LINES.join("\n"), body, 'end'].join("\n")
+        content = [CURRENT_WRAPPER_CALL, body, 'end'].join("\n")
         @content.end_with?("\n") || @content.empty? ? "#{content}\n" : content
       end
 
@@ -142,6 +142,29 @@ module Rails
         Struct.new(:options, :conductor_workspace_root).new({ 'conductor' => false },
                                                             "File.expand_path('~/Sites/conductor/workspaces')")
       end
+
+      def guarded_configure_block?(lines)
+        lines.last(2).map(&:strip) == %w[end end] && lines.any? { |line| line.strip == CONFIGURE_CALL }
+      end
+
+      def guarded_configure_lines(lines, configure_index)
+        lines[0...configure_index].reject { |line| line.strip.empty? }.map(&:rstrip)
+      end
+
+      def body_indent(body_lines)
+        body_lines.reject { |line| line.strip.empty? }
+                  .map { |line| line[/\A\s*/].length }
+                  .min || 0
+      end
+
+      def normalize_body_line(line, minimum_indent)
+        trimmed = line.sub(/\A\s{0,#{minimum_indent}}/, '')
+        "  #{trimmed}"
+      end
+
+      def current_guard_present? = current_wrapper_present?
+
+      def wrapped_body = normalized_body
     end
     # rubocop:enable Metrics/ClassLength
   end

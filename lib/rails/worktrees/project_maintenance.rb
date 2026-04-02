@@ -151,7 +151,8 @@ module Rails
           identifier: :initializer,
           category: :install,
           relative_path: 'config/initializers/rails_worktrees.rb',
-          identical_headline: 'config/initializers/rails_worktrees.rb already uses the current safety guard.',
+          identical_headline: 'config/initializers/rails_worktrees.rb already uses the current managed initializer ' \
+                              'format.',
           fixable_headline: 'config/initializers/rails_worktrees.rb can be updated automatically.',
           warning_headline: 'config/initializers/rails_worktrees.rb needs manual review.'
         }
@@ -162,7 +163,8 @@ module Rails
             config,
             "#{config.fetch(:relative_path)} is missing.",
             updated_content: InitializerUpdater.default_content,
-            apply_messages: ['Created config/initializers/rails_worktrees.rb with the current safety guard.']
+            apply_messages: ['Created config/initializers/rails_worktrees.rb in the current managed initializer ' \
+                             'format.']
           )
         end
 
