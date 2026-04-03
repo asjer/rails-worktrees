@@ -13,6 +13,8 @@ RSpec.describe Rails::Worktrees::Command do
       config.used_names_file = File.join(tmpdir, 'state', 'used-names.tsv')
       config.name_sources_path = File.join(tmpdir, 'names')
       config.legacy_used_names_files = []
+      # Disable post-create steps by default so tests that don't opt in are unaffected
+      config.post_create_command = false
     end
   end
 
@@ -509,6 +511,96 @@ RSpec.describe Rails::Worktrees::Command do
         expect(File.directory?(target_dir)).to be(true)
         expect(git_output('-C', target_dir, 'branch', '--show-current')).to eq('🚂/feature-one')
         expect(out.string).not_to include('Root:')
+      end
+    end
+
+    context 'with post-create setup steps' do
+      before do
+        # Switch to built-in mode with all steps off; each example opts in to what it needs
+        configuration.post_create_command = nil
+        configuration.run_bundle_install = false
+        configuration.run_yarn_install = false
+        configuration.run_db_prepare = false
+        configuration.run_test_db_prepare = false
+        configuration.run_test_assets_precompile = false
+        configuration.link_credential_keys = false
+        configuration.link_test_credential_key = false
+        configuration.link_production_credential_key = false
+      end
+
+      it 'skips all post-create steps when post_create_command is false' do
+        configuration.post_create_command = false
+        configuration.run_bundle_install = true
+        out = StringIO.new
+
+        expect(build_command(argv: ['feature-one'], stdout: out).run).to eq(0)
+        expect(out.string).not_to include('Installing gems')
+      end
+
+      it 'dry-runs post-create steps without executing them' do
+        configuration.run_bundle_install = true
+        configuration.run_db_prepare = true
+        out = StringIO.new
+
+        expect(build_command(argv: ['--dry-run', 'feature-one'], stdout: out).run).to eq(0)
+        expect(out.string).to include('Would run: bundle install')
+        expect(out.string).to include('Would run: RAILS_ENV=development bin/rails db:prepare')
+        expect(out.string).not_to include('Installing gems...')
+      end
+
+      it 'runs a custom post_create_command in the target directory' do
+        configuration.post_create_command = 'echo "custom-setup-ran"'
+        out = StringIO.new
+
+        expect(build_command(argv: ['feature-one'], stdout: out).run).to eq(0)
+        expect(out.string).to include('custom-setup-ran')
+      end
+
+      it 'returns exit 1 when the custom command fails' do
+        configuration.post_create_command = 'exit 1'
+        err = StringIO.new
+
+        expect(build_command(argv: ['feature-one'], stderr: err).run).to eq(1)
+        expect(err.string).to include('Command failed')
+      end
+
+      it 'does not run post-create steps on worktree reuse' do
+        build_command(argv: ['feature-one']).run
+        configuration.post_create_command = 'echo "should-not-run"'
+        out = StringIO.new
+
+        expect(build_command(argv: ['feature-one'], stdin: tty_input("yes\n"), stdout: out).run).to eq(0)
+        expect(out.string).not_to include('should-not-run')
+      end
+
+      it 'links a credential key from a peer worktree after creation' do
+        configuration.link_credential_keys = true
+
+        # seed the primary checkout with a development.key
+        write_repo_file('config/credentials/development.key', 'dev-secret')
+
+        out = StringIO.new
+        expect(build_command(argv: ['feature-one'], stdout: out).run).to eq(0)
+
+        target_dir = File.join(configuration.workspace_root, 'app', 'feature-one')
+        linked_key = File.join(target_dir, 'config/credentials', 'development.key')
+
+        expect(File.symlink?(linked_key)).to be(true)
+        expect(out.string).to include('Linked development.key')
+      end
+
+      it 'dry-runs credential key linking without creating a symlink' do
+        configuration.link_credential_keys = true
+        write_repo_file('config/credentials/development.key', 'dev-secret')
+
+        out = StringIO.new
+        expect(build_command(argv: ['--dry-run', 'feature-one'], stdout: out).run).to eq(0)
+
+        target_dir = File.join(configuration.workspace_root, 'app', 'feature-one')
+        linked_key = File.join(target_dir, 'config/credentials', 'development.key')
+
+        expect(File.symlink?(linked_key)).to be(false)
+        expect(out.string).to include('Would link development.key')
       end
     end
   end

@@ -16,4 +16,15 @@ Rails.application.config.x.rails_worktrees.tap do |config|
   #   'rails-worktrees',
   #   'used-names.tsv'
   # )
+
+  # Post-create setup steps (run automatically after a new worktree is created)
+  # config.post_create_command = nil    # nil = built-in steps; false = skip all; 'script/worktree-setup' = custom command
+  # config.run_bundle_install = true
+  # config.run_yarn_install = true      # auto-skipped when yarn.lock is absent
+  # config.run_db_prepare = true
+  # config.run_test_db_prepare = true
+  # config.run_test_assets_precompile = true
+  # config.link_credential_keys = true  # link development.key from a sibling worktree (opt-out)
+  # config.link_test_credential_key = false
+  # config.link_production_credential_key = false
 end

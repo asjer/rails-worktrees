@@ -10,6 +10,15 @@ module Rails
         name_sources_path
         used_names_file
         worktree_database_suffix_max_length
+        post_create_command
+        run_bundle_install
+        run_yarn_install
+        run_db_prepare
+        run_test_db_prepare
+        run_test_assets_precompile
+        link_credential_keys
+        link_test_credential_key
+        link_production_credential_key
       ].freeze
 
       DEFAULT_BOOTSTRAP_ENV = true
@@ -25,9 +34,20 @@ module Rails
 
       attr_accessor :bootstrap_env, :branch_prefix, :dev_port_range, :legacy_used_names_files,
                     :name_sources_path, :used_names_file, :workspace_root,
-                    :worktree_database_suffix_max_length
+                    :worktree_database_suffix_max_length,
+                    :post_create_command,
+                    :run_bundle_install, :run_yarn_install,
+                    :run_db_prepare, :run_test_db_prepare, :run_test_assets_precompile,
+                    :link_credential_keys, :link_test_credential_key, :link_production_credential_key
 
       def initialize
+        assign_core_defaults
+        assign_post_create_defaults
+      end
+
+      private
+
+      def assign_core_defaults
         @bootstrap_env = DEFAULT_BOOTSTRAP_ENV
         @workspace_root = nil
         @branch_prefix = DEFAULT_BRANCH_PREFIX
@@ -38,7 +58,17 @@ module Rails
         @legacy_used_names_files = default_legacy_used_names_files
       end
 
-      private
+      def assign_post_create_defaults
+        @post_create_command = nil
+        @run_bundle_install = true
+        @run_yarn_install = true
+        @run_db_prepare = true
+        @run_test_db_prepare = true
+        @run_test_assets_precompile = true
+        @link_credential_keys = true
+        @link_test_credential_key = false
+        @link_production_credential_key = false
+      end
 
       def default_legacy_used_names_files
         state_home = ENV.fetch('XDG_STATE_HOME', File.join(Dir.home, '.local/state'))
