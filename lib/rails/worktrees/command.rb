@@ -3,6 +3,7 @@ require_relative 'command/environment_support'
 require_relative 'command/git_operations'
 require_relative 'command/name_picking'
 require_relative 'command/output'
+require_relative 'command/post_create_support'
 require_relative 'command/workspace_paths'
 
 module Rails
@@ -18,6 +19,7 @@ module Rails
       include EnvironmentSupport
       include NamePicking
       include Output
+      include PostCreateSupport
       include WorkspacePaths
 
       def initialize(argv:, io:, env:, cwd:, configuration:)
@@ -284,7 +286,20 @@ module Rails
       def finish(context)
         settle_retired_name(context[:worktree_name], context[:project_name], dry_run: dry_run?)
         bootstrap_result = bootstrap_worktree_environment(context)
-        return complete_dry_run(context, env_values: bootstrap_result&.values) if dry_run?
+
+        return complete_dry_run_after_setup(context, bootstrap_result) if dry_run?
+
+        complete_created_worktree(context, bootstrap_result)
+      end
+
+      def complete_dry_run_after_setup(context, bootstrap_result)
+        preview_post_create_steps(context)
+        complete_dry_run(context, env_values: bootstrap_result&.values)
+      end
+
+      def complete_created_worktree(context, bootstrap_result)
+        result = run_post_create_steps(context)
+        return result unless result.zero?
 
         success('Worktree ready')
         print_context_summary(context, env_values: bootstrap_result&.values)
