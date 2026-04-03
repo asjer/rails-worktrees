@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/asjer/rails-worktrees/compare/v0.5.1...v0.6.0) (2026-04-03)
+
+
+### Features
+
+* **post-create:** bootstrap new worktrees after creation ([b429105](https://github.com/asjer/rails-worktrees/commit/b42910507d21c1d048d45cfdc4d7311a1ec8a96b))
+
 ## [0.5.1](https://github.com/asjer/rails-worktrees/compare/v0.5.0...v0.5.1) (2026-04-02)
 
 
