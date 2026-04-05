@@ -13,6 +13,7 @@ module Rails
     class Command
       REMOVE_SUBCOMMANDS = %w[remove delete].freeze
       DOCTOR_SUBCOMMAND = 'doctor'.freeze
+      SETUP_SUBCOMMAND = 'setup'.freeze
       UPDATE_SUBCOMMAND = 'update'.freeze
 
       include GitOperations
@@ -49,9 +50,12 @@ module Rails
 
       def force? = @force
 
+      def skip_setup? = @skip_setup
+
       def extract_flags!
         @dry_run = extract_flag!('--dry-run')
         @force = extract_flag!('--force')
+        @skip_setup = extract_flag!('--skip-setup')
       end
 
       def extract_flag!(flag)
@@ -77,18 +81,35 @@ module Rails
         @argv.first == DOCTOR_SUBCOMMAND
       end
 
+      def setup_subcommand?
+        @argv.first == SETUP_SUBCOMMAND
+      end
+
       def update_subcommand?
         @argv.first == UPDATE_SUBCOMMAND
       end
 
       def execute_requested_command
-        return execute_doctor_command if doctor_subcommand?
-        return execute_update_command if update_subcommand?
-        return execute_remove_command if remove_subcommand?
-        return execute_prune_command if prune_subcommand?
-        return usage_error if @argv.length > 1 || force?
+        handler = requested_command_handler
+        return handler.call if handler
+        return usage_error if invalid_worktree_command?
 
         execute_worktree_command
+      end
+
+      def requested_command_handler
+        case @argv.first
+        when DOCTOR_SUBCOMMAND then -> { execute_doctor_command }
+        when SETUP_SUBCOMMAND then -> { execute_setup_command }
+        when UPDATE_SUBCOMMAND then -> { execute_update_command }
+        when 'prune' then -> { execute_prune_command }
+        else
+          -> { execute_remove_command } if remove_subcommand?
+        end
+      end
+
+      def invalid_worktree_command?
+        @argv.length > 1 || force?
       end
 
       def execute_worktree_command
@@ -105,6 +126,16 @@ module Rails
         prepare_target_parent(context[:target_dir])
         attach_or_create_worktree(context)
         finish(context)
+      end
+
+      def execute_setup_command
+        validate_setup_args!
+        announce_dry_run if dry_run?
+
+        context = resolve_setup_context(target_reference: setup_target_reference)
+        validate_setup_target!(context)
+
+        complete_setup_flow(context, success_message: 'Setup complete')
       end
 
       def execute_remove_command
@@ -210,17 +241,26 @@ module Rails
       def validate_prune_args!
         raise Error, 'Usage: wt prune' unless @argv.length == 1
         raise Error, 'The --force flag is only supported with wt remove.' if force?
+        raise Error, 'The --skip-setup flag is only supported when creating a worktree.' if skip_setup?
       end
 
       def validate_doctor_args!
         raise Error, 'Usage: wt doctor' unless @argv.length == 1
         raise Error, 'wt doctor does not support --dry-run.' if dry_run?
         raise Error, 'The --force flag is only supported with wt remove.' if force?
+        raise Error, 'The --skip-setup flag is only supported when creating a worktree.' if skip_setup?
+      end
+
+      def validate_setup_args!
+        raise Error, 'Usage: wt setup [--dry-run] [path|name]' unless [1, 2].include?(@argv.length)
+        raise Error, 'The --force flag is only supported with wt remove.' if force?
+        raise Error, 'The --skip-setup flag is only supported when creating a worktree.' if skip_setup?
       end
 
       def validate_update_args!
         raise Error, 'Usage: wt update [--dry-run]' unless @argv.length == 1
         raise Error, 'The --force flag is only supported with wt remove.' if force?
+        raise Error, 'The --skip-setup flag is only supported when creating a worktree.' if skip_setup?
       end
 
       def announce_prune_candidates(candidates)
@@ -258,6 +298,60 @@ module Rails
         )
       end
 
+      def resolve_setup_context(target_reference: nil, repository: nil)
+        if setup_target_name?(target_reference)
+          return resolve_named_setup_context(target_reference, repository: repository)
+        end
+
+        resolve_path_setup_context(target_reference, repository: repository)
+      end
+
+      def resolve_path_setup_context(target_reference, repository: nil)
+        target_dir = resolved_setup_target_path(target_reference)
+        repository ||= target_reference ? resolve_repository_context_for(target_dir) : resolve_repository_context
+        branch_name = current_checkout_branch_at(target_dir)
+
+        repository.merge(
+          worktree_name: setup_identity_for(repository[:current_root], branch_name),
+          branch_name: display_branch_name(branch_name, target_dir: repository[:current_root]),
+          target_dir: repository[:current_root],
+          peer_roots: peer_roots_for(repository[:current_root])
+        )
+      end
+
+      def resolve_named_setup_context(worktree_name, repository: nil)
+        repository ||= resolve_repository_context
+        context = resolve_worktree_context(explicit_worktree_name: worktree_name, repository: repository)
+        branch_name = resolved_named_setup_branch_name(context)
+
+        context.merge(
+          branch_name: display_branch_name(branch_name, target_dir: context[:target_dir]),
+          peer_roots: peer_roots_for(context[:target_dir])
+        )
+      end
+
+      def resolved_named_setup_branch_name(context)
+        return context[:branch_name] unless File.directory?(context[:target_dir])
+
+        current_checkout_branch_at(context[:target_dir])
+      end
+
+      def setup_target_reference = @argv[1]
+
+      def setup_target_name?(target_reference)
+        !target_reference.nil? && !path_like_setup_target?(target_reference)
+      end
+
+      def resolved_setup_target_path(target_path)
+        return @cwd if target_path.nil?
+
+        File.expand_path(target_path, @cwd)
+      end
+
+      def path_like_setup_target?(target_reference)
+        target_reference.start_with?('/', '.', '~') || target_reference.include?(File::SEPARATOR)
+      end
+
       def resolved_worktree_name(project_name, workspaces, explicit_worktree_name)
         return validate_worktree_name(explicit_worktree_name) if explicit_worktree_name
 
@@ -285,25 +379,50 @@ module Rails
 
       def finish(context)
         settle_retired_name(context[:worktree_name], context[:project_name], dry_run: dry_run?)
-        bootstrap_result = bootstrap_worktree_environment(context)
-
-        return complete_dry_run_after_setup(context, bootstrap_result) if dry_run?
-
-        complete_created_worktree(context, bootstrap_result)
+        complete_setup_flow(
+          context,
+          success_message: skip_setup? ? 'Worktree created' : 'Worktree ready',
+          run_post_create: !skip_setup?
+        )
       end
 
-      def complete_dry_run_after_setup(context, bootstrap_result)
-        preview_post_create_steps(context)
+      def complete_dry_run_after_setup(context, bootstrap_result, run_post_create: true)
+        preview_post_create_steps(context, bootstrapped_env: bootstrap_result&.values) if run_post_create
+        info('Would skip setup steps; run `wt setup` inside the checkout when you are ready.') unless run_post_create
         complete_dry_run(context, env_values: bootstrap_result&.values)
       end
 
-      def complete_created_worktree(context, bootstrap_result)
-        result = run_post_create_steps(context)
+      def complete_created_worktree(context, bootstrap_result, success_message:, run_post_create: true)
+        unless run_post_create
+          return complete_created_worktree_without_setup(context, bootstrap_result, success_message)
+        end
+
+        result = run_post_create_steps(context, bootstrapped_env: bootstrap_result&.values)
         return result unless result.zero?
 
-        success('Worktree ready')
+        success(success_message)
         print_context_summary(context, env_values: bootstrap_result&.values)
         0
+      end
+
+      def complete_created_worktree_without_setup(context, bootstrap_result, success_message)
+        success(success_message)
+        print_context_summary(context, env_values: bootstrap_result&.values)
+        info('Setup skipped. Run `wt setup` inside the checkout when you are ready.')
+        0
+      end
+
+      def complete_setup_flow(context, success_message:, run_post_create: true)
+        bootstrap_result = bootstrap_worktree_environment(context)
+
+        return complete_dry_run_after_setup(context, bootstrap_result, run_post_create: run_post_create) if dry_run?
+
+        complete_created_worktree(
+          context,
+          bootstrap_result,
+          success_message: success_message,
+          run_post_create: run_post_create
+        )
       end
 
       def finish_reuse(context)
@@ -336,6 +455,78 @@ module Rails
 
       def branch_name_for(worktree_name)
         "#{@configuration.branch_prefix}/#{worktree_name}"
+      end
+
+      def validate_setup_target!(context)
+        raise Error, "Setup target does not exist: #{context[:target_dir]}" unless File.directory?(context[:target_dir])
+
+        rails_bin = File.join(context[:target_dir], 'bin', 'rails')
+
+        unless File.exist?(rails_bin)
+          raise Error,
+                "Setup target does not look like a Rails app. Expected #{rails_bin} to exist before running wt setup."
+        end
+
+        return if registered_worktree_path_for_setup?(context[:target_dir])
+
+        warning(
+          'Current checkout is not registered in git worktree list; peer credential key discovery may be limited.'
+        )
+      end
+
+      def current_checkout_branch_at(target_dir)
+        git_capture('-C', target_dir, 'branch', '--show-current', allow_failure: true).strip
+      end
+
+      def registered_worktree_path_for_setup?(target_dir)
+        normalized_target = canonical_path(target_dir)
+
+        worktree_entries_for_checkout(target_dir).any? { |entry| entry[:path] == normalized_target }
+      end
+
+      def peer_roots_for(target_dir)
+        normalized_target = canonical_path(target_dir)
+
+        worktree_entries_for_checkout(target_dir)
+          .map { |entry| entry[:path] }
+          .reject { |path| path == normalized_target }
+      end
+
+      def worktree_entries_for_checkout(target_dir)
+        git_capture('-C', target_dir, 'worktree', 'list', '--porcelain', allow_failure: true)
+          .split("\n\n")
+          .filter_map do |block|
+            entry = parse_worktree_entry(block)
+            entry[:path] ? entry : nil
+          end
+      end
+
+      def setup_identity_for(target_dir, branch_name)
+        stripped_branch = worktree_identity_from_branch(branch_name)
+        return stripped_branch unless stripped_branch.empty?
+
+        File.basename(target_dir)
+      end
+
+      def worktree_identity_from_branch(branch_name)
+        branch_name = branch_name.to_s.strip
+        return '' if branch_name.empty?
+
+        worktree_name_for_branch(branch_name)
+      end
+
+      def display_branch_name(branch_name, target_dir: nil)
+        branch_name = branch_name.to_s.strip
+        return branch_name unless branch_name.empty?
+
+        git_args = if target_dir.to_s.strip.empty?
+                     ['rev-parse', '--short', 'HEAD']
+                   else
+                     ['-C', target_dir, 'rev-parse', '--short', 'HEAD']
+                   end
+
+        short_sha = git_capture(*git_args, allow_failure: true).strip
+        short_sha.empty? ? '(detached HEAD)' : "(detached HEAD at #{short_sha})"
       end
 
       def ensure_removable!(context, worktree_exists:, branch_exists:)

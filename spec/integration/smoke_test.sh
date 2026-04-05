@@ -213,6 +213,14 @@ printf '%s\n' "$PRINT_URL_OUTPUT"
 
 grep -Fq "http://localhost:$ACTUAL_DEV_PORT/contact?from=nav" < <(printf '%s\n' "$PRINT_URL_OUTPUT") || fail 'Expected bin/ob --print-url to resolve the worktree-local localhost URL'
 
+say 'Rerunning setup inside the existing smoke worktree'
+SETUP_OUTPUT="$(cd "$EXPECTED_WORKTREE" && bin/wt setup)"
+printf '%s\n' "$SETUP_OUTPUT"
+
+grep -Fq 'Setup complete' < <(printf '%s\n' "$SETUP_OUTPUT") || fail 'Expected wt setup to finish successfully inside the existing worktree'
+grep -Fq "Port:   $ACTUAL_DEV_PORT" < <(printf '%s\n' "$SETUP_OUTPUT") || fail 'Expected wt setup to preserve the existing DEV_PORT'
+grep -Fq 'Suffix: _smoke_branch' < <(printf '%s\n' "$SETUP_OUTPUT") || fail 'Expected wt setup to preserve the existing database suffix'
+
 grep -Fq "$EXPECTED_WORKTREE" < <(git worktree list) || fail 'Expected git worktree list to include the created worktree'
 
 say 'Creating a sibling runner worktree'

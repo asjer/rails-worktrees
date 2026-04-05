@@ -42,8 +42,12 @@ With `--yolo`, the installer also:
 ```bash
 bin/wt                          # auto-pick a name from bundled *.txt lists
 bin/wt my-feature               # use an explicit worktree name
+bin/wt --skip-setup my-feature  # create now, run setup later
 bin/wt --dry-run my-feature     # preview the full setup without changing anything
 bin/wt --print-env my-feature   # preview DEV_PORT and WORKTREE_DATABASE_SUFFIX
+bin/wt setup                    # rerun setup for the current checkout/worktree
+bin/wt setup my-feature         # rerun setup for a managed worktree by name
+bin/wt setup ../my-project.worktrees/my-feature # setup a specific checkout without cd-ing into it
 bin/wt doctor                   # audit install/config drift and basic worktree health
 bin/wt update --dry-run         # preview safe maintenance fixes
 bin/wt update                   # apply safe maintenance fixes for managed files
@@ -65,6 +69,7 @@ bin/ob --print-url '?from=nav'  # print the resolved URL without opening a brows
 | `-h`, `--help` | Show the help message |
 | `-v`, `--version` | Show the script version |
 | `--dry-run [name]` | Preview worktree creation or cleanup without changing anything |
+| `--skip-setup` | Create a worktree without running setup steps |
 | `--force` | Force branch deletion for `bin/wt remove` / `bin/wt delete` |
 | `--env`, `--print-env <name>` | Preview `DEV_PORT` and `WORKTREE_DATABASE_SUFFIX` |
 
@@ -78,6 +83,7 @@ By default `bin/wt`:
 - auto-picks names from bundled `.txt` files when no explicit name is given
 - retires bundled names so they are not picked twice
 - bootstraps a worktree-local `.env` with deterministic `DEV_PORT` and `WORKTREE_DATABASE_SUFFIX` values
+- runs setup automatically after creation: credential linking, `bundle install`, `yarn install` when applicable, both `db:prepare` steps, test asset precompile, and a final `bin/rails assets:clobber`
 
 ```text
 workspace/
@@ -89,6 +95,32 @@ workspace/
 ```
 
 `WT_WORKSPACES_ROOT` or `config.workspace_root` overrides the destination root and uses the layout `<root>/<project>/<name>`.
+
+### Setup command
+
+`bin/wt setup` reruns setup for the **current checkout**. Run it from inside a linked worktree created by `bin/wt`, a worktree created manually with `git worktree`, or a checkout prepared by another tool.
+
+If the checkout was created by `bin/wt`, you can also point at it by managed worktree name from the main app checkout:
+
+```bash
+bin/wt setup my-feature
+```
+
+If you do not want to `cd` first, pass an explicit checkout path:
+
+```bash
+bin/wt setup ../my-project.worktrees/my-feature
+```
+
+This is the recovery path when you want to create first and bootstrap later:
+
+```bash
+bin/wt --skip-setup my-feature
+cd ../my-project.worktrees/my-feature
+bin/wt setup
+```
+
+`bin/wt setup --dry-run` previews the same steps without changing files.
 
 ### Cleanup commands
 
@@ -181,7 +213,7 @@ If your `database.yml` is too custom to patch safely, the installer leaves it al
 When `bin/wt` creates a worktree it writes a worktree-local `.env` with:
 
 - `DEV_PORT` — deterministic port derived from the worktree name via CRC32, rotated through `dev_port_range`, skipping ports already claimed by peer worktrees
-- `WORKTREE_DATABASE_SUFFIX` — derived from the worktree name so the `database.yml` ERB works immediately
+- `WORKTREE_DATABASE_SUFFIX` — derived from the best available worktree identity (managed name when known, otherwise the current branch or checkout basename). When a readable suffix is already claimed by a peer checkout, `bin/wt` appends a short `DEV_PORT`-based token to keep the databases isolated.
 
 Existing `.env` values are never overwritten.
 

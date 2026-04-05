@@ -7,7 +7,19 @@ module Rails
 
         def resolve_repository_context
           current_root = canonical_path(git_capture('rev-parse', '--show-toplevel').strip)
-          common_dir = expand_git_path(git_capture('rev-parse', '--git-common-dir').strip)
+          common_dir = expand_git_path(git_capture('rev-parse', '--git-common-dir').strip, base_dir: @cwd)
+          primary_root = primary_checkout_root_for(current_root, common_dir)
+
+          repository_context_for(current_root, primary_root)
+        end
+
+        def resolve_repository_context_for(path)
+          expanded_path = File.expand_path(path, @cwd)
+          current_root = canonical_path(git_capture('-C', expanded_path, 'rev-parse', '--show-toplevel').strip)
+          common_dir = expand_git_path(
+            git_capture('-C', expanded_path, 'rev-parse', '--git-common-dir').strip,
+            base_dir: expanded_path
+          )
           primary_root = primary_checkout_root_for(current_root, common_dir)
 
           repository_context_for(current_root, primary_root)
@@ -66,10 +78,10 @@ module Rails
           canonical_path(File.dirname(common_dir))
         end
 
-        def expand_git_path(path)
+        def expand_git_path(path, base_dir: @cwd)
           return path if path.start_with?('/')
 
-          File.expand_path(path, @cwd)
+          File.expand_path(path, base_dir)
         end
 
         def present_path?(path)

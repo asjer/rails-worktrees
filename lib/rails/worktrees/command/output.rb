@@ -30,9 +30,11 @@ module Rails
             Create and clean up Git worktrees for the current repository.
 
             Usage: wt [worktree-name]
+                   wt [--skip-setup] [worktree-name]
                    wt --dry-run [worktree-name]
                    wt --print-env <worktree-name>
                    wt doctor
+                   wt setup [--dry-run] [path|name]
                    wt update [--dry-run]
                    wt remove [--dry-run] [--force] <worktree-name>
                    wt delete [--dry-run] [--force] <worktree-name>
@@ -42,6 +44,7 @@ module Rails
               -h, --help                  Show this help message
               -v, --version               Show the script version
               --dry-run [name]            Preview worktree creation or cleanup without changing anything
+              --skip-setup               Create the worktree without running setup steps
               --force                     Delete an unmerged local branch with wt remove/delete
               --env, --print-env <name>   Preview DEV_PORT and WORKTREE_DATABASE_SUFFIX
 
@@ -49,8 +52,12 @@ module Rails
               wt                 Auto-pick a name from a bundled *.txt list
               wt my-feature      Use an explicit worktree name
               wt --dry-run my-feature
+              wt --skip-setup my-feature
               wt --print-env my-feature
               wt doctor
+              wt setup
+              wt setup my-feature
+              wt setup ../my-project.worktrees/my-feature
               wt update --dry-run
               wt remove my-feature
               wt remove --force my-feature
@@ -61,6 +68,8 @@ module Rails
               - when workspace_root or WT_WORKSPACES_ROOT is set, creates worktrees in <root>/<project>/<name>
               - always uses the branch name #{@configuration.branch_prefix}/<name>
               - bases new branches on the repository's origin default branch
+              - by default wt <name> both creates the worktree and runs setup automatically
+              - wt setup reruns setup for the current checkout, a managed worktree name, or a specific checkout path, including manually-created worktrees
               - wt doctor audits install/config drift plus basic worktree health without changing files
               - wt update applies safe file-based fixes for managed installer artifacts and config hints
               - wt remove/delete can run from the main checkout or any sibling worktree, but never remove the worktree you're currently in

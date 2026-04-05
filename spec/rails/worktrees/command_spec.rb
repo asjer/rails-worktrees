@@ -52,6 +52,15 @@ RSpec.describe Rails::Worktrees::Command do
     )
   end
 
+  def install_minimal_rails_app_files
+    rails_path = write_repo_file('bin/rails', "#!/usr/bin/env ruby\nputs 'rails'\n")
+    FileUtils.chmod(0o755, rails_path)
+    write_repo_file('config/application.rb', "module DummyApp\n  class Application\n  end\nend\n")
+    git!('-C', repo_path, 'add', 'bin/rails', 'config/application.rb')
+    git!('-C', repo_path, 'commit', '-m', 'Add minimal Rails app files')
+    git!('-C', repo_path, 'push', 'origin', 'main')
+  end
+
   def build_command(argv: [], env: {}, cwd: repo_path, **io_overrides)
     # Use only path-related variables from the host to allow tools like `git` to run
     base_env = ENV.to_h.slice('PATH', 'HOME')
@@ -176,6 +185,20 @@ RSpec.describe Rails::Worktrees::Command do
       target_dir = File.join(explicit_root, 'app', 'from-env')
       expect(File.directory?(target_dir)).to be(true)
       expect(out.string).to include("Root:   #{explicit_root}")
+    end
+
+    it 'creates a new worktree without running setup when --skip-setup is passed' do
+      configuration.post_create_command = 'echo "should-not-run"'
+      out = StringIO.new
+
+      expect(build_command(argv: ['--skip-setup', 'feature-one'], stdout: out).run).to eq(0)
+
+      target_dir = File.join(configuration.workspace_root, 'app', 'feature-one')
+      expect(File.directory?(target_dir)).to be(true)
+      expect(File.read(File.join(target_dir, '.env'))).to include('WORKTREE_DATABASE_SUFFIX=_feature_one')
+      expect(out.string).to include('Worktree created')
+      expect(out.string).to include('Setup skipped. Run `wt setup` inside the checkout when you are ready.')
+      expect(out.string).not_to include('should-not-run')
     end
 
     it 'reuses an existing matching worktree when confirmed' do
@@ -421,6 +444,125 @@ RSpec.describe Rails::Worktrees::Command do
       expect(build_command(argv: ['doctor'], cwd: tmpdir, stderr: err).run).to eq(1)
 
       expect(err.string).to include('Run wt doctor from inside a Git repository.')
+    end
+
+    it 'rejects wt setup outside a Rails checkout' do
+      err = StringIO.new
+
+      expect(build_command(argv: ['setup'], stderr: err).run).to eq(1)
+
+      expect(err.string).to include('Setup target does not look like a Rails app')
+    end
+
+    it 'rejects --skip-setup with wt setup' do
+      install_minimal_rails_app_files
+      err = StringIO.new
+
+      expect(build_command(argv: ['setup', '--skip-setup'], stderr: err).run).to eq(1)
+
+      expect(err.string).to include('The --skip-setup flag is only supported when creating a worktree.')
+    end
+
+    it 'reports setup usage with the name-or-path target form' do
+      install_minimal_rails_app_files
+      err = StringIO.new
+
+      expect(build_command(argv: %w[setup one two], stderr: err).run).to eq(1)
+
+      expect(err.string).to include('Usage: wt setup [--dry-run] [path|name]')
+    end
+
+    it 'runs wt setup in the current checkout of an externally created worktree' do
+      install_minimal_rails_app_files
+      external_dir = File.join(tmpdir, 'shared-checkout')
+      out = StringIO.new
+
+      git!('-C', repo_path, 'worktree', 'add', '-b', 'feature-external', external_dir, 'main')
+
+      expect(build_command(argv: ['setup'], cwd: external_dir, stdout: out).run).to eq(0)
+
+      env_text = File.read(File.join(external_dir, '.env'))
+      expect(env_text).to include('WORKTREE_DATABASE_SUFFIX=_feature_external')
+      expect(out.string).to include('Setup complete')
+      expect(out.string).to include("Path:   #{File.realpath(external_dir)}")
+      expect(out.string).to include('Branch: feature-external')
+    end
+
+    it 'dry-runs wt setup in the current checkout without writing .env' do
+      install_minimal_rails_app_files
+      external_dir = File.join(tmpdir, 'shared-checkout')
+      out = StringIO.new
+
+      git!('-C', repo_path, 'worktree', 'add', '-b', 'feature-external', external_dir, 'main')
+
+      expect(build_command(argv: ['setup', '--dry-run'], cwd: external_dir, stdout: out).run).to eq(0)
+
+      expect(File.exist?(File.join(external_dir, '.env'))).to be(false)
+      expect(out.string).to include('Dry run complete')
+      expect(out.string).to match(/Would bootstrap \.env \(DEV_PORT=\d+, WORKTREE_DATABASE_SUFFIX=_feature_external\)/)
+    end
+
+    it 'runs wt setup for an explicit target path without changing directory first' do
+      install_minimal_rails_app_files
+      external_dir = File.join(tmpdir, 'shared-checkout')
+      out = StringIO.new
+
+      git!('-C', repo_path, 'worktree', 'add', '-b', 'feature-explicit', external_dir, 'main')
+
+      expect(build_command(argv: ['setup', external_dir], stdout: out).run).to eq(0)
+
+      env_text = File.read(File.join(external_dir, '.env'))
+      expect(env_text).to include('WORKTREE_DATABASE_SUFFIX=_feature_explicit')
+      expect(out.string).to include('Setup complete')
+      expect(out.string).to include("Path:   #{File.realpath(external_dir)}")
+      expect(out.string).to include('Branch: feature-explicit')
+    end
+
+    it 'reports the detached-head sha for wt setup on an explicit target path' do
+      install_minimal_rails_app_files
+      external_dir = File.join(tmpdir, 'shared-checkout')
+      out = StringIO.new
+
+      git!('-C', repo_path, 'worktree', 'add', '--detach', external_dir, 'main')
+      expected_sha = git_output('-C', external_dir, 'rev-parse', '--short', 'HEAD')
+
+      write_repo_file('AFTER_WORKTREE.txt', "new head\n")
+      git!('-C', repo_path, 'add', 'AFTER_WORKTREE.txt')
+      git!('-C', repo_path, 'commit', '-m', 'Advance main after detached worktree')
+
+      expect(build_command(argv: ['setup', external_dir], cwd: tmpdir, stdout: out).run).to eq(0)
+
+      expect(out.string).to include("Branch: (detached HEAD at #{expected_sha})")
+    end
+
+    it 'runs wt setup for a relative target path' do
+      install_minimal_rails_app_files
+      external_dir = File.join(tmpdir, 'shared-checkout')
+      out = StringIO.new
+
+      git!('-C', repo_path, 'worktree', 'add', '-b', 'feature-relative', external_dir, 'main')
+
+      expect(build_command(argv: ['setup', '../shared-checkout'], stdout: out).run).to eq(0)
+
+      expect(File.read(File.join(external_dir, '.env'))).to include('WORKTREE_DATABASE_SUFFIX=_feature_relative')
+      expect(out.string).to include('Setup complete')
+    end
+
+    it 'runs wt setup for a managed worktree name from the main checkout' do
+      install_minimal_rails_app_files
+      out = StringIO.new
+
+      expect(build_command(argv: ['feature-one']).run).to eq(0)
+
+      target_dir = File.join(configuration.workspace_root, 'app', 'feature-one')
+      FileUtils.rm_f(File.join(target_dir, '.env'))
+
+      expect(build_command(argv: %w[setup feature-one], stdout: out).run).to eq(0)
+
+      expect(File.read(File.join(target_dir, '.env'))).to include('WORKTREE_DATABASE_SUFFIX=_feature_one')
+      expect(out.string).to include('Setup complete')
+      expect(out.string).to include("Path:   #{target_dir}")
+      expect(out.string).to include('Branch: 🚂/feature-one')
     end
 
     it 'reports fixable installer drift and becomes healthy after wt update' do

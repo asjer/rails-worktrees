@@ -14,10 +14,11 @@ module Rails
 
       ENV_FILE_NAME = '.env'.freeze
 
-      def initialize(target_dir:, worktree_name:, configuration:)
+      def initialize(target_dir:, worktree_name:, configuration:, peer_roots: nil)
         @target_dir = target_dir
         @worktree_name = worktree_name
         @configuration = configuration
+        @peer_roots = peer_roots.nil? ? nil : Array(peer_roots).compact
       end
 
       def call(dry_run: false)
@@ -46,10 +47,12 @@ module Rails
       def existing_env_lines = File.exist?(env_path) ? File.readlines(env_path, chomp: true) : []
 
       def resolved_values(lines)
+        dev_port = (env_value(lines, 'DEV_PORT') || allocate_dev_port).to_s
+
         {
-          'DEV_PORT' => (env_value(lines, 'DEV_PORT') || allocate_dev_port).to_s,
+          'DEV_PORT' => dev_port,
           'WORKTREE_DATABASE_SUFFIX' => env_value(lines, 'WORKTREE_DATABASE_SUFFIX') ||
-            format_worktree_database_suffix(@worktree_name)
+            allocate_worktree_database_suffix(dev_port: dev_port)
         }
       end
 
@@ -108,8 +111,7 @@ module Rails
       end
 
       def claimed_peer_ports
-        Dir.glob(File.join(peers_root, '*')).filter_map do |path|
-          next unless File.directory?(path)
+        peer_paths.filter_map do |path|
           next if File.expand_path(path) == File.expand_path(@target_dir)
 
           port = env_value(peer_env_lines(path), 'DEV_PORT')
@@ -126,7 +128,20 @@ module Rails
 
       def peers_root = File.dirname(@target_dir)
 
+      def peer_paths
+        return @peer_roots unless @peer_roots.nil?
+
+        Dir.glob(File.join(peers_root, '*')).select { |path| File.directory?(path) }
+      end
+
       def configured_port_range = @configuration.dev_port_range
+
+      def allocate_worktree_database_suffix(dev_port:)
+        base_candidate = format_worktree_database_suffix(@worktree_name)
+        return base_candidate unless claimed_peer_suffixes.include?(base_candidate)
+
+        suffix_with_token(@worktree_name, dev_port.to_s)
+      end
 
       def format_worktree_database_suffix(value)
         suffix = value.downcase.gsub(/[^a-z0-9]+/, '_').gsub(/\A_+|_+\z/, '').squeeze('_')
@@ -134,6 +149,35 @@ module Rails
         suffix = suffix.to_s.sub(/_+\z/, '')
         suffix = 'worktree' if suffix.empty?
         "_#{suffix}"
+      end
+
+      def suffix_with_token(value, token)
+        slug = normalized_suffix_slug(value)
+        normalized_token = token.to_s.downcase.gsub(/[^a-z0-9]+/, '')
+        max_length = @configuration.worktree_database_suffix_max_length
+        available_slug_length = max_length - normalized_token.length - 1
+
+        composed_slug = if available_slug_length.positive?
+                          [slug[0, available_slug_length], normalized_token].reject(&:empty?).join('_')
+                        else
+                          normalized_token[0, max_length]
+                        end
+
+        format_worktree_database_suffix(composed_slug)
+      end
+
+      def normalized_suffix_slug(value)
+        slug = value.to_s.downcase.gsub(/[^a-z0-9]+/, '_').gsub(/\A_+|_+\z/, '').squeeze('_')
+        slug.empty? ? 'worktree' : slug
+      end
+
+      def claimed_peer_suffixes
+        peer_paths.each_with_object(Set.new) do |path, suffixes|
+          next if File.expand_path(path) == File.expand_path(@target_dir)
+
+          suffix = env_value(peer_env_lines(path), 'WORKTREE_DATABASE_SUFFIX')
+          suffixes << suffix if suffix
+        end
       end
 
       def formatted_updates(updates) = updates.map { |key, value| "#{key}=#{value}" }.join(', ')
