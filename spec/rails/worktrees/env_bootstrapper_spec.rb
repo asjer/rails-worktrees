@@ -19,8 +19,13 @@ RSpec.describe Rails::Worktrees::EnvBootstrapper do
     FileUtils.rm_rf(tmpdir)
   end
 
-  def bootstrapper_for(name = worktree_name)
-    described_class.new(target_dir: File.join(worktrees_root, name), worktree_name: name, configuration: configuration)
+  def bootstrapper_for(name = worktree_name, target_path: File.join(worktrees_root, name), peer_roots: nil)
+    described_class.new(
+      target_dir: target_path,
+      worktree_name: name,
+      configuration: configuration,
+      peer_roots: peer_roots
+    )
   end
 
   def env_contents(name = worktree_name)
@@ -94,6 +99,34 @@ RSpec.describe Rails::Worktrees::EnvBootstrapper do
     expect(env_port_for(worktree_name)).to eq(
       bootstrapper_for.send(:candidate_ports, configuration.dev_port_range.to_a)[1]
     )
+  end
+
+  it 'appends a DEV_PORT-based token when a peer already claims the readable suffix' do
+    peer_dir = File.join(tmpdir, 'external-peer')
+    preferred_port = bootstrapper_for.send(:candidate_ports, configuration.dev_port_range.to_a).first
+    expected_port = bootstrapper_for.send(:candidate_ports, configuration.dev_port_range.to_a)[1]
+
+    FileUtils.mkdir_p(peer_dir)
+    File.write(File.join(peer_dir, '.env'), "DEV_PORT=#{preferred_port}\nWORKTREE_DATABASE_SUFFIX=_feature_one\n")
+
+    result = bootstrapper_for(peer_roots: [peer_dir]).call
+
+    expect(result.values['DEV_PORT']).to eq(expected_port.to_s)
+    expect(result.values['WORKTREE_DATABASE_SUFFIX']).to eq("_feature_one_#{expected_port}")
+    expect(env_contents).to include("WORKTREE_DATABASE_SUFFIX=_feature_one_#{expected_port}")
+  end
+
+  it 'honors an explicit empty peer_roots override' do
+    preferred_port = bootstrapper_for.send(:candidate_ports, configuration.dev_port_range.to_a).first
+    occupied_dir = File.join(worktrees_root, 'occupied')
+
+    FileUtils.mkdir_p(occupied_dir)
+    File.write(File.join(occupied_dir, '.env'), "DEV_PORT=#{preferred_port}\nWORKTREE_DATABASE_SUFFIX=_feature_one\n")
+
+    result = bootstrapper_for(peer_roots: []).call
+
+    expect(result.values['DEV_PORT']).to eq(preferred_port.to_s)
+    expect(result.values['WORKTREE_DATABASE_SUFFIX']).to eq('_feature_one')
   end
 
   it 'normalizes the database suffix like the setup script' do

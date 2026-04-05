@@ -20,6 +20,7 @@ module Rails
           EnvBootstrapper.new(
             target_dir: context[:target_dir],
             worktree_name: context[:worktree_name],
+            peer_roots: context.fetch(:peer_roots) { peer_roots_excluding(context[:target_dir]) },
             configuration: @configuration
           )
         end

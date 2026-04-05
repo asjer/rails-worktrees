@@ -6,11 +6,29 @@ require 'tmpdir'
 
 RSpec.describe Rails::Worktrees::PostCreateRunner do
   let(:tmpdir) { Dir.mktmpdir('post-create-runner-spec') }
-  let(:target_dir) { File.join(tmpdir, 'target') }
-  let(:peer_dir) { File.join(tmpdir, 'peer') }
   let(:io) { { stdout: StringIO.new, stderr: StringIO.new } }
+  let(:configuration) { build_configuration }
+  let(:mise_environment) do
+    default_result = Rails::Worktrees::MiseEnvironment::Result.new(env: {}, messages: [])
 
-  let(:configuration) do
+    Object.new.tap do |environment|
+      environment.define_singleton_method(:call) { default_result }
+    end
+  end
+
+  before do
+    allow(Rails::Worktrees::MiseEnvironment).to receive(:new).and_return(mise_environment)
+  end
+
+  around do |example|
+    FileUtils.mkdir_p(target_dir)
+    FileUtils.mkdir_p(peer_dir)
+    example.run
+  ensure
+    FileUtils.rm_rf(tmpdir)
+  end
+
+  def build_configuration
     Rails::Worktrees::Configuration.new.tap do |c|
       c.run_bundle_install = false
       c.run_yarn_install = false
@@ -23,19 +41,16 @@ RSpec.describe Rails::Worktrees::PostCreateRunner do
     end
   end
 
-  around do |example|
-    FileUtils.mkdir_p(target_dir)
-    FileUtils.mkdir_p(peer_dir)
-    example.run
-  ensure
-    FileUtils.rm_rf(tmpdir)
-  end
+  def target_dir = File.join(tmpdir, 'target')
 
-  def build_runner
+  def peer_dir = File.join(tmpdir, 'peer')
+
+  def build_runner(bootstrapped_env: {})
     described_class.new(
       target_dir: target_dir,
       peer_roots: [peer_dir],
       configuration: configuration,
+      bootstrapped_env: bootstrapped_env,
       io: io
     )
   end
@@ -74,8 +89,18 @@ RSpec.describe Rails::Worktrees::PostCreateRunner do
     [
       { env: runner_env.merge('RAILS_ENV' => 'development'), command: %w[bin/rails db:prepare], chdir: target_dir },
       { env: runner_env.merge('RAILS_ENV' => 'test'), command: %w[bin/rails db:prepare], chdir: target_dir },
-      { env: runner_env.merge('RAILS_ENV' => 'test'), command: %w[bin/rails assets:precompile], chdir: target_dir }
+      { env: runner_env.merge('RAILS_ENV' => 'test'), command: %w[bin/rails assets:precompile], chdir: target_dir },
+      { env: runner_env, command: %w[bin/rails assets:clobber], chdir: target_dir }
     ]
+  end
+
+  def configure_bundle_install!
+    configuration.run_bundle_install = true
+    File.write(File.join(target_dir, 'Gemfile'), "# frozen_string_literal: true\nsource 'https://rubygems.org'\n")
+  end
+
+  def expect_single_command(commands, env:, command:)
+    expect(commands).to eq([{ env: env, command: command, chdir: target_dir }])
   end
 
   describe '#call' do
@@ -104,6 +129,19 @@ RSpec.describe Rails::Worktrees::PostCreateRunner do
         expect(result).to eq(0)
         expect(commands).to eq([{ env: runner_env, command: ['echo "hello from custom"'], chdir: target_dir }])
         expect(out).to include('hello from custom')
+      end
+
+      it 'passes the bootstrapped env to the custom command' do
+        env_values = { 'DEV_PORT' => '3555', 'WORKTREE_DATABASE_SUFFIX' => '_feature_one' }
+        commands = stub_popen2e_sequence(popen_result(output: "hello from custom\n"))
+
+        build_runner(bootstrapped_env: env_values).call
+
+        expect_single_command(
+          commands,
+          env: runner_env.merge(env_values),
+          command: ['echo "hello from custom"']
+        )
       end
 
       it 'returns non-zero when the custom command cannot start' do
@@ -154,8 +192,7 @@ RSpec.describe Rails::Worktrees::PostCreateRunner do
 
     context 'with built-in steps' do
       before do
-        configuration.run_bundle_install = true
-        File.write(File.join(target_dir, 'Gemfile'), "# frozen_string_literal: true\nsource 'https://rubygems.org'\n")
+        configure_bundle_install!
       end
 
       it 'runs bundle install in the target directory' do
@@ -164,8 +201,17 @@ RSpec.describe Rails::Worktrees::PostCreateRunner do
         result = build_runner.call
 
         expect(result).to eq(0)
-        expect(commands).to eq([{ env: runner_env, command: %w[bundle install], chdir: target_dir }])
+        expect_single_command(commands, env: runner_env, command: %w[bundle install])
         expect(out).to include('Installing gems')
+      end
+
+      it 'passes the bootstrapped env to built-in commands' do
+        env_values = { 'DEV_PORT' => '3555', 'WORKTREE_DATABASE_SUFFIX' => '_feature_one' }
+        commands = stub_popen2e_sequence(popen_result)
+
+        build_runner(bootstrapped_env: env_values).call
+
+        expect_single_command(commands, env: runner_env.merge(env_values), command: %w[bundle install])
       end
 
       it 'aborts remaining steps when a step fails' do
@@ -176,6 +222,48 @@ RSpec.describe Rails::Worktrees::PostCreateRunner do
 
         expect(result).to eq(1)
         expect(commands).to eq([{ env: runner_env, command: %w[bundle install], chdir: target_dir }])
+      end
+    end
+
+    context 'with mise toolchain activation' do
+      before do
+        configure_bundle_install!
+      end
+
+      it 'passes the bootstrapped env into mise environment resolution' do
+        env_values = { 'DEV_PORT' => '3555', 'WORKTREE_DATABASE_SUFFIX' => '_feature_one' }
+
+        build_runner(bootstrapped_env: env_values).call
+
+        expect(Rails::Worktrees::MiseEnvironment).to have_received(:new).with(
+          target_dir: target_dir,
+          env: runner_env.merge(env_values)
+        )
+      end
+
+      it 'merges mise env into setup subprocesses' do
+        allow(mise_environment).to receive(:call).and_return(
+          Rails::Worktrees::MiseEnvironment::Result.new(
+            env: { 'MISE_ACTIVE' => '1' },
+            messages: ['🔐 Trusting mise config...', '🧰 Activating mise toolchain...']
+          )
+        )
+        commands = stub_popen2e_sequence(popen_result)
+
+        build_runner.call
+
+        expect_single_command(commands, env: runner_env.merge('MISE_ACTIVE' => '1'), command: %w[bundle install])
+        expect(out).to include('Trusting mise config')
+        expect(out).to include('Activating mise toolchain')
+      end
+
+      it 'returns a clear error when mise activation fails' do
+        allow(mise_environment).to receive(:call).and_raise(Rails::Worktrees::Error, 'mise trust failed: nope')
+        allow(Open3).to receive(:popen2e)
+
+        expect(build_runner.call).to eq(1)
+        expect(err).to include('mise trust failed: nope')
+        expect(Open3).not_to have_received(:popen2e)
       end
     end
 
@@ -238,6 +326,7 @@ RSpec.describe Rails::Worktrees::PostCreateRunner do
         expect(out).to include('Would run: RAILS_ENV=development bin/rails db:prepare')
         expect(out).to include('Would run: RAILS_ENV=test bin/rails db:prepare')
         expect(out).to include('Would run: RAILS_ENV=test bin/rails assets:precompile')
+        expect(out).to include('Would run: bin/rails assets:clobber')
         expect(Open3).not_to have_received(:popen2e)
       end
     end
@@ -253,6 +342,7 @@ RSpec.describe Rails::Worktrees::PostCreateRunner do
         commands = stub_popen2e_sequence(
           popen_result,
           popen_result,
+          popen_result,
           popen_result
         )
 
@@ -262,6 +352,7 @@ RSpec.describe Rails::Worktrees::PostCreateRunner do
         expect(out).to include('Preparing development database')
         expect(out).to include('Preparing test database')
         expect(out).to include('Precompiling test assets')
+        expect(out).to include('Clobbering compiled assets')
       end
     end
   end

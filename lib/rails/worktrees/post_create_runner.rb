@@ -4,7 +4,7 @@ module Rails
   module Worktrees
     # Runs post-create setup steps in a newly created worktree.
     # Steps run in order: credential linking, bundle install, yarn install,
-    # db:prepare (development), db:prepare (test), assets:precompile (test).
+    # db:prepare (development), db:prepare (test), assets:precompile (test), assets:clobber.
     # rubocop:disable Metrics/ClassLength
     class PostCreateRunner
       STEPS = [
@@ -17,7 +17,9 @@ module Rails
         { id: :test_db_prepare, argv: %w[bin/rails db:prepare],
           header: '🗄️  Preparing test database...', env: { 'RAILS_ENV' => 'test' } },
         { id: :test_assets_precompile, argv: %w[bin/rails assets:precompile],
-          header: '🎨 Precompiling test assets...', env: { 'RAILS_ENV' => 'test' } }
+          header: '🎨 Precompiling test assets...', env: { 'RAILS_ENV' => 'test' } },
+        { id: :assets_clobber, argv: %w[bin/rails assets:clobber],
+          header: '🧹 Clobbering compiled assets...' }
       ].freeze
 
       STEP_CONFIG = {
@@ -25,13 +27,15 @@ module Rails
         yarn: :run_yarn_install,
         db_prepare: :run_db_prepare,
         test_db_prepare: :run_test_db_prepare,
-        test_assets_precompile: :run_test_assets_precompile
+        test_assets_precompile: :run_test_assets_precompile,
+        assets_clobber: :run_test_assets_precompile
       }.freeze
 
-      def initialize(target_dir:, peer_roots:, configuration:, io:)
+      def initialize(target_dir:, peer_roots:, configuration:, io:, bootstrapped_env: nil)
         @target_dir    = target_dir
         @peer_roots    = peer_roots
         @configuration = configuration
+        @bootstrapped_env = (bootstrapped_env || {}).transform_values(&:to_s)
         @stdout        = io.fetch(:stdout)
         @stderr        = io.fetch(:stderr)
       end
@@ -39,9 +43,14 @@ module Rails
       def call(dry_run: false)
         return 0 if @configuration.post_create_command == false
 
+        @runtime_env = resolved_runtime_env(dry_run: dry_run)
+
         return run_custom_command(dry_run: dry_run) if custom_command?
 
         run_built_in_steps(dry_run: dry_run)
+      rescue Error => e
+        @stderr.puts("❌ #{e.message}")
+        1
       end
 
       private
@@ -118,7 +127,7 @@ module Rails
       def capture_shell_command_exit_status(command)
         exit_status = nil
 
-        Open3.popen2e(base_env, command, chdir: @target_dir) do |_stdin, output, wait_thread|
+        Open3.popen2e(runtime_env, command, chdir: @target_dir) do |_stdin, output, wait_thread|
           output.each_line { |line| @stdout.print(line) }
           exit_status = wait_thread.value.exitstatus
         end
@@ -143,13 +152,28 @@ module Rails
         1
       end
 
-      def base_env
+      def shell_env
         # Pass through only the essentials so subprocess tools work correctly.
         ENV.to_h.slice('PATH', 'HOME', 'LANG', 'TERM', 'SHELL',
                        'BUNDLE_GEMFILE', 'BUNDLE_PATH', 'GEM_HOME', 'GEM_PATH',
                        'RUBY_VERSION', 'RAILS_ENV', 'NODE_ENV',
                        'XDG_STATE_HOME', 'XDG_DATA_HOME', 'XDG_CONFIG_HOME',
                        'DEV_PORT', 'WORKTREE_DATABASE_SUFFIX')
+      end
+
+      attr_reader :runtime_env
+
+      def resolved_runtime_env(dry_run:)
+        env = shell_env.merge(@bootstrapped_env)
+        return env if dry_run
+
+        env.merge(toolchain_env)
+      end
+
+      def toolchain_env
+        result = MiseEnvironment.new(target_dir: @target_dir, env: shell_env.merge(@bootstrapped_env)).call
+        result.messages.each { |message| info(message) }
+        result.env
       end
 
       def yarn_lock_present?
@@ -163,7 +187,7 @@ module Rails
       end
 
       def step_command(step)
-        [base_env.merge(step.fetch(:env, {})), *step.fetch(:argv)]
+        [runtime_env.merge(step.fetch(:env, {})), *step.fetch(:argv)]
       end
 
       def info(message)
