@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/asjer/rails-worktrees/compare/v0.6.0...v0.7.0) (2026-04-05)
+
+
+### Features
+
+* **wt:** add rerunnable setup workflow ([a609fcc](https://github.com/asjer/rails-worktrees/commit/a609fcc3c463da1d2ad9922b620f9c517dc6ed74))
+
 ## [0.6.0](https://github.com/asjer/rails-worktrees/compare/v0.5.1...v0.6.0) (2026-04-03)
 
 
