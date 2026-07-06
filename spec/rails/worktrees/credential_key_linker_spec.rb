@@ -58,7 +58,7 @@ RSpec.describe Rails::Worktrees::CredentialKeyLinker do
       it 'returns a message about the linked key' do
         result = linker.call
 
-        expect(result.messages).to include(match(/Linked development\.key →/))
+        expect(result.messages).to include(include('Linked development.key →'))
       end
 
       it 'does not link test or production keys by default' do
@@ -83,7 +83,7 @@ RSpec.describe Rails::Worktrees::CredentialKeyLinker do
       it 'returns a "Would link" message' do
         result = linker.call(dry_run: true)
 
-        expect(result.messages).to include(match(/Would link development\.key →/))
+        expect(result.messages).to include(include('Would link development.key →'))
       end
     end
 
@@ -99,7 +99,7 @@ RSpec.describe Rails::Worktrees::CredentialKeyLinker do
         expect { linker.call }.not_to raise_error
 
         result = linker.call
-        expect(result.messages).to include(match(/already linked/))
+        expect(result.messages).to include(include('already linked'))
       end
     end
 
@@ -116,7 +116,7 @@ RSpec.describe Rails::Worktrees::CredentialKeyLinker do
 
         expect(File.symlink?(target_key_path('development'))).to be(true)
         expect(File.exist?(target_key_path('development'))).to be(true)
-        expect(result.messages).to include(match(/Relinked development\.key →/))
+        expect(result.messages).to include(include('Relinked development.key →'))
       end
 
       it 'reports a dry-run relink without changing the symlink' do
@@ -125,7 +125,7 @@ RSpec.describe Rails::Worktrees::CredentialKeyLinker do
         result = linker.call(dry_run: true)
 
         expect(File.readlink(target_key_path('development'))).to eq(original_target)
-        expect(result.messages).to include(match(/Would relink development\.key →/))
+        expect(result.messages).to include(include('Would relink development.key →'))
       end
     end
 
@@ -147,7 +147,7 @@ RSpec.describe Rails::Worktrees::CredentialKeyLinker do
       it 'returns a message about leaving it as-is' do
         result = linker.call
 
-        expect(result.messages).to include(match(/already exists/))
+        expect(result.messages).to include(include('already exists'))
       end
     end
 
@@ -155,7 +155,7 @@ RSpec.describe Rails::Worktrees::CredentialKeyLinker do
       it 'returns a warning message' do
         result = linker.call
 
-        expect(result.messages).to include(match(/Could not find source for development\.key/))
+        expect(result.messages).to include(include('Could not find source for development.key'))
         expect(File.symlink?(target_key_path('development'))).to be(false)
       end
     end
