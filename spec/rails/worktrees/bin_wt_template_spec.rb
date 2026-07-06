@@ -79,7 +79,7 @@ RSpec.describe 'generated bin/wt template' do
     BASH
   end
 
-  def run_wt(extra_env = {})
+  def run_wt(extra_env = {}, command_args = %w[setup --dry-run])
     env = {
       'HOME' => home,
       'PATH' => '/usr/bin:/bin:/usr/sbin:/sbin',
@@ -88,7 +88,7 @@ RSpec.describe 'generated bin/wt template' do
       'LC_ALL' => 'C'
     }.merge(extra_env)
 
-    Open3.capture3(env, wt_path, 'setup', '--dry-run', chdir: app_root, unsetenv_others: true)
+    Open3.capture3(env, wt_path, *command_args, chdir: app_root, unsetenv_others: true)
   end
 
   def hide_mise_bash_env
@@ -106,6 +106,10 @@ RSpec.describe 'generated bin/wt template' do
 
   def log_lines
     File.readlines(log_path, chomp: true)
+  end
+
+  def log_value(name)
+    log_lines.grep(/\A#{Regexp.escape(name)}=/).first&.delete_prefix("#{name}=")
   end
 
   it 'trusts and re-execs through mise before Ruby/Bundler under a sparse PATH' do
@@ -153,6 +157,47 @@ RSpec.describe 'generated bin/wt template' do
     expect(status).to be_success, stderr
     expect(log_lines.grep(/\ALANG=/).first).to match(/UTF-?8/i)
     expect(log_lines).to include('LC_ALL=')
+  end
+
+  it 'normalizes bare locale names before Ruby/Bundler' do
+    _stdout, stderr, status = run_wt('LANG' => 'en_US', 'LC_ALL' => nil)
+
+    expect(status).to be_success, stderr
+    expect(log_value('LANG')).to match(/UTF-?8/i)
+    expect(log_value('LANG')).not_to eq('en_US')
+  end
+
+  it 'normalizes ISO-8859 locale values before Ruby/Bundler' do
+    _stdout, stderr, status = run_wt('LANG' => 'nl_NL.ISO8859-15', 'LC_ALL' => 'en_US.ISO-8859-1')
+
+    expect(status).to be_success, stderr
+    expect(log_value('LANG')).to match(/UTF-?8/i)
+    expect(log_value('LC_ALL')).to match(/UTF-?8/i)
+  end
+
+  it 'preserves UTF-8 locale markers and modifiers' do
+    _stdout, stderr, status = run_wt('LANG' => 'en_US.UTF-8@foo', 'LC_ALL' => 'C.UTF-8')
+
+    expect(status).to be_success, stderr
+    expect(log_value('LANG')).to eq('en_US.UTF-8@foo')
+    expect(log_value('LC_ALL')).to eq('C.UTF-8')
+  end
+
+  it 'preserves UTF8 locale markers without hyphens' do
+    _stdout, stderr, status = run_wt('LANG' => 'en_US.UTF8', 'LC_ALL' => nil)
+
+    expect(status).to be_success, stderr
+    expect(log_value('LANG')).to eq('en_US.UTF8')
+    expect(log_value('LC_ALL')).to eq('')
+  end
+
+  it 'runs doctor with C locale variables' do
+    _stdout, stderr, status = run_wt({}, %w[doctor])
+
+    expect(status).to be_success, stderr
+    expect(log_lines.grep(/\Aruby_args=/).first).to include(' doctor')
+    expect(log_value('LANG')).to match(/UTF-?8/i)
+    expect(log_value('LC_ALL')).to match(/UTF-?8/i)
   end
 end
 # rubocop:enable RSpec/DescribeClass

@@ -17,8 +17,8 @@ export PATH
 
 wt_locale_needs_utf8() {
   case "${1:-}" in
-    ""|C|POSIX) return 0 ;;
-    *) return 1 ;;
+    *[._-][Uu][Tt][Ff]-8*|*[._-][Uu][Tt][Ff]8*) return 1 ;;
+    *) return 0 ;;
   esac
 }
 
