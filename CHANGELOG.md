@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.1](https://github.com/asjer/rails-worktrees/compare/v0.7.0...v0.7.1) (2026-07-06)
+
+
+### Bug Fixes
+
+* **wt:** bootstrap mise before bundler ([24720a1](https://github.com/asjer/rails-worktrees/commit/24720a1cf51ce55676277c478f3b86bbb98e72eb))
+
 ## [0.7.0](https://github.com/asjer/rails-worktrees/compare/v0.6.0...v0.7.0) (2026-04-05)
 
 
