@@ -137,7 +137,7 @@ module Rails
       def env_value(lines, key)
         line = lines.reverse.find { |entry| entry.start_with?("#{key}=") }
         value = line&.split('=', 2)&.last
-        value unless value&.empty?
+        presence(value)
       end
 
       def dev_port_resolution

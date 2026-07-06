@@ -3,7 +3,6 @@ module Rails
     # Audits and prepares safe file-based maintenance updates for the current checkout.
     # rubocop:disable Metrics/ClassLength, Metrics/MethodLength, Metrics/AbcSize
     class ProjectMaintenance
-      # rubocop:disable Style/RedundantStructKeywordInit
       Check = Struct.new(
         :identifier,
         :category,

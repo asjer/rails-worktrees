@@ -92,7 +92,7 @@ module Rails
       def env_value(lines, key)
         line = lines.reverse.find { |entry| entry.start_with?("#{key}=") }
         value = line&.split('=', 2)&.last
-        value unless value&.empty?
+        value if value && !value.empty?
       end
 
       def allocate_dev_port
