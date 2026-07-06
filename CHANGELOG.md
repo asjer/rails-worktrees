@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.2](https://github.com/asjer/rails-worktrees/compare/v0.7.1...v0.7.2) (2026-07-06)
+
+
+### Bug Fixes
+
+* **wt:** normalize non-UTF-8 locale values before bundler ([17e644b](https://github.com/asjer/rails-worktrees/commit/17e644b0b5f4e2174802baae9bc844b29f5ff36d))
+
 ## [0.7.1](https://github.com/asjer/rails-worktrees/compare/v0.7.0...v0.7.1) (2026-07-06)
 
 
