@@ -1,5 +1,65 @@
-#!/usr/bin/env ruby
-ENV['BUNDLE_GEMFILE'] ||= File.expand_path('../Gemfile', __dir__)
+#!/usr/bin/env bash
+set -e
 
-require 'bundler/setup'
-load Gem.bin_path('rails-worktrees', 'wt')
+wt_prepend_path() {
+  case ":${PATH:-}:" in
+    *":$1:"*) ;;
+    *) PATH="$1${PATH:+:$PATH}" ;;
+  esac
+}
+
+wt_prepend_path "/usr/local/bin"
+wt_prepend_path "/opt/homebrew/bin"
+if [ -n "${HOME:-}" ]; then
+  wt_prepend_path "$HOME/.local/bin"
+fi
+export PATH
+
+wt_locale_needs_utf8() {
+  case "${1:-}" in
+    ""|C|POSIX) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+wt_utf8_locale() {
+  if command -v locale >/dev/null 2>&1 && locale -a 2>/dev/null | grep -Eiq '^(C|c)[_.-]UTF-?8$'; then
+    printf '%s' 'C.UTF-8'
+  else
+    printf '%s' 'en_US.UTF-8'
+  fi
+}
+
+if wt_locale_needs_utf8 "${LANG:-}" || { [ -n "${LC_ALL:-}" ] && wt_locale_needs_utf8 "${LC_ALL:-}"; }; then
+  WT_UTF8_LOCALE="${LANG:-}"
+  if wt_locale_needs_utf8 "$WT_UTF8_LOCALE"; then
+    WT_UTF8_LOCALE="$(wt_utf8_locale)"
+  fi
+
+  if wt_locale_needs_utf8 "${LANG:-}"; then
+    export LANG="$WT_UTF8_LOCALE"
+  fi
+  if [ -n "${LC_ALL:-}" ] && wt_locale_needs_utf8 "${LC_ALL:-}"; then
+    export LC_ALL="$WT_UTF8_LOCALE"
+  fi
+fi
+
+WT_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+WT_SCRIPT_PATH="$WT_SCRIPT_DIR/$(basename "${BASH_SOURCE[0]}")"
+WT_APP_ROOT="$(cd "$WT_SCRIPT_DIR/.." && pwd -P)"
+WT_MISE_CONFIG=""
+
+if [ -f "$WT_APP_ROOT/mise.toml" ]; then
+  WT_MISE_CONFIG="$WT_APP_ROOT/mise.toml"
+elif [ -f "$WT_APP_ROOT/.mise.toml" ]; then
+  WT_MISE_CONFIG="$WT_APP_ROOT/.mise.toml"
+fi
+
+if [ -n "$WT_MISE_CONFIG" ] && [ -z "${RAILS_WORKTREES_BOOTSTRAPPED:-}" ] && command -v mise >/dev/null 2>&1; then
+  mise trust "$WT_MISE_CONFIG" >/dev/null || true
+  export RAILS_WORKTREES_BOOTSTRAPPED=1
+  exec mise exec -- "$WT_SCRIPT_PATH" "$@"
+fi
+
+export BUNDLE_GEMFILE="${BUNDLE_GEMFILE:-$WT_APP_ROOT/Gemfile}"
+exec ruby -rbundler/setup -e 'load Gem.bin_path("rails-worktrees", "wt")' -- "$@"

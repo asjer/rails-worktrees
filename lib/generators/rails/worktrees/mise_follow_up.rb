@@ -3,6 +3,8 @@ module Rails
     module Generators
       # Detects common mise.toml setups and suggests loading the worktree-local .env.
       module MiseFollowUp
+        FILE_ENCODING = 'UTF-8'.freeze
+
         private
 
         def follow_up_notes_text
@@ -26,7 +28,7 @@ module Rails
         def mise_env_file_configured?
           return false unless mise_toml_path
 
-          File.read(mise_toml_path).match?(/^\s*_.file\s*=\s*["']\.env["']\s*(?:#.*)?\s*$/)
+          File.read(mise_toml_path, encoding: FILE_ENCODING).match?(/^\s*_.file\s*=\s*["']\.env["']\s*(?:#.*)?\s*$/)
         end
 
         def mise_toml_path

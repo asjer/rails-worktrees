@@ -7,6 +7,26 @@ module Rails
       # Shell-level git helpers, branch/worktree queries, and worktree creation.
       # rubocop:disable Metrics/ModuleLength
       module GitOperations
+        GIT_REPOSITORY_ENV_KEYS = %w[
+          GIT_ALTERNATE_OBJECT_DIRECTORIES
+          GIT_COMMON_DIR
+          GIT_CONFIG
+          GIT_CONFIG_COUNT
+          GIT_CONFIG_PARAMETERS
+          GIT_DIR
+          GIT_GRAFT_FILE
+          GIT_IMPLICIT_WORK_TREE
+          GIT_INDEX_FILE
+          GIT_NAMESPACE
+          GIT_NO_REPLACE_OBJECTS
+          GIT_OBJECT_DIRECTORY
+          GIT_PREFIX
+          GIT_QUARANTINE_PATH
+          GIT_REPLACE_REF_BASE
+          GIT_SHALLOW_FILE
+          GIT_WORK_TREE
+        ].freeze
+
         private
 
         def require_git_repo
@@ -162,22 +182,40 @@ module Rails
         end
 
         def git!(*)
-          stdout_str, stderr_str, status = Open3.capture3(@env.to_h, 'git', *, chdir: @cwd)
+          stdout_str, stderr_str, status = Open3.capture3(
+            git_process_env, 'git', *, chdir: @cwd, unsetenv_others: true
+          )
+          stdout_str = command_output(stdout_str)
+          stderr_str = command_output(stderr_str)
           return stdout_str if status.success?
 
           raise Error, combined_output(stdout_str, stderr_str)
         end
 
         def git_capture(*, allow_failure: false)
-          stdout_str, stderr_str, status = Open3.capture3(@env.to_h, 'git', *, chdir: @cwd)
+          stdout_str, stderr_str, status = Open3.capture3(
+            git_process_env, 'git', *, chdir: @cwd, unsetenv_others: true
+          )
+          stdout_str = command_output(stdout_str)
+          stderr_str = command_output(stderr_str)
           return stdout_str if status.success? || allow_failure
 
           raise Error, combined_output(stdout_str, stderr_str)
         end
 
         def git_success?(*)
-          _stdout_str, _stderr_str, status = Open3.capture3(@env.to_h, 'git', *, chdir: @cwd)
+          _stdout_str, _stderr_str, status = Open3.capture3(
+            git_process_env, 'git', *, chdir: @cwd, unsetenv_others: true
+          )
           status.success?
+        end
+
+        def git_process_env
+          @env.to_h.except(*GIT_REPOSITORY_ENV_KEYS)
+        end
+
+        def command_output(output)
+          output.to_s.dup.force_encoding(Encoding::UTF_8).scrub
         end
 
         def combined_output(stdout_str, stderr_str)

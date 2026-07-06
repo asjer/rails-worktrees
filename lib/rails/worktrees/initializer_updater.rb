@@ -12,6 +12,7 @@ module Rails
       end
 
       TEMPLATE_PATH = File.expand_path('../../generators/rails/worktrees/templates/rails_worktrees.rb.tt', __dir__)
+      FILE_ENCODING = 'UTF-8'.freeze
       CURRENT_WRAPPER_CALL = 'Rails.application.config.x.rails_worktrees.tap do |config|'.freeze
       CONFIGURE_CALL = 'Rails::Worktrees.configure do |config|'.freeze
       KNOWN_GUARD_FRAGMENTS = [
@@ -135,7 +136,9 @@ module Rails
       end
 
       def render_default_template
-        ERB.new(File.read(TEMPLATE_PATH), trim_mode: '-').result(template_context.instance_eval { binding })
+        ERB.new(File.read(TEMPLATE_PATH, encoding: FILE_ENCODING), trim_mode: '-').result(
+          template_context.instance_eval { binding }
+        )
       end
 
       def template_context

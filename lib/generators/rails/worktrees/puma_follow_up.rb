@@ -3,6 +3,8 @@ module Rails
     module Generators
       # Detects config/puma.rb setups that should prefer the worktree-local DEV_PORT.
       module PumaFollowUp
+        FILE_ENCODING = 'UTF-8'.freeze
+
         private
 
         def puma_follow_up_notes_text
@@ -24,7 +26,9 @@ module Rails
         def puma_update_result
           return missing_puma_update_result unless existing_puma_config_path
 
-          ::Rails::Worktrees::PumaConfigUpdater.new(content: File.read(existing_puma_config_path)).call
+          ::Rails::Worktrees::PumaConfigUpdater.new(
+            content: File.read(existing_puma_config_path, encoding: FILE_ENCODING)
+          ).call
         end
 
         def missing_puma_update_result

@@ -22,19 +22,19 @@ RSpec.describe Worktrees::Generators::InstallGenerator do
   end
 
   def read_database_yml
-    File.read(File.join(tmpdir, 'config/database.yml'))
+    File.read(File.join(tmpdir, 'config/database.yml'), encoding: 'UTF-8')
   end
 
   def read_initializer
-    File.read(File.join(tmpdir, 'config/initializers/rails_worktrees.rb'))
+    File.read(File.join(tmpdir, 'config/initializers/rails_worktrees.rb'), encoding: 'UTF-8')
   end
 
   def read_procfile_worktree_example
-    File.read(File.join(tmpdir, 'Procfile.dev.worktree.example'))
+    File.read(File.join(tmpdir, 'Procfile.dev.worktree.example'), encoding: 'UTF-8')
   end
 
   def read_procfile_dev
-    File.read(File.join(tmpdir, 'Procfile.dev'))
+    File.read(File.join(tmpdir, 'Procfile.dev'), encoding: 'UTF-8')
   end
 
   def browser_wrapper_path
@@ -42,7 +42,7 @@ RSpec.describe Worktrees::Generators::InstallGenerator do
   end
 
   def read_puma_config
-    File.read(File.join(tmpdir, 'config/puma.rb'))
+    File.read(File.join(tmpdir, 'config/puma.rb'), encoding: 'UTF-8')
   end
 
   def write_mise_toml(content)
@@ -116,6 +116,34 @@ RSpec.describe Worktrees::Generators::InstallGenerator do
     end
     run_generator(*args)
     output
+  end
+
+  def capture_generator_statuses(*args)
+    statuses = []
+    allow(described_class).to receive(:new).and_wrap_original do |original, *generator_args, **kwargs|
+      generator = original.call(*generator_args, **kwargs)
+      allow(generator).to receive(:say_status).and_wrap_original do |orig_say_status, *say_status_args|
+        statuses << say_status_args
+        orig_say_status.call(*say_status_args)
+      end
+      generator
+    end
+    run_generator(*args)
+    statuses
+  end
+
+  def with_env(updates)
+    originals = updates.transform_values { |_value| nil }
+    updates.each do |key, value|
+      originals[key] = ENV.fetch(key, nil)
+      value.nil? ? ENV.delete(key) : ENV[key] = value
+    end
+
+    yield
+  ensure
+    originals.each do |key, value|
+      value.nil? ? ENV.delete(key) : ENV[key] = value
+    end
   end
 
   def suffix
@@ -292,6 +320,18 @@ RSpec.describe Worktrees::Generators::InstallGenerator do
 
     expect(read_database_yml).to include("storage/development#{suffix}.sqlite3")
     expect(read_database_yml).to include("storage/test#{suffix}.sqlite3")
+  end
+
+  it 'ignores inherited Git hook environment when checking the destination repository' do
+    statuses = nil
+
+    with_env('GIT_DIR' => File.expand_path('../../../.git', __dir__),
+             'GIT_WORK_TREE' => File.expand_path('../../..', __dir__)) do
+      statuses = capture_generator_statuses
+    end
+
+    expect(statuses).to include([:warning, 'run inside a git repository for bin/wt to work', :yellow])
+    expect(statuses).not_to include([:ok, 'git repository detected', :green])
   end
 
   describe 'follow-up message' do

@@ -13,6 +13,7 @@ module Rails
       end
 
       ENV_FILE_NAME = '.env'.freeze
+      FILE_ENCODING = 'UTF-8'.freeze
 
       def initialize(target_dir:, worktree_name:, configuration:, peer_roots: nil)
         @target_dir = target_dir
@@ -44,7 +45,9 @@ module Rails
         result(false, [message], values)
       end
 
-      def existing_env_lines = File.exist?(env_path) ? File.readlines(env_path, chomp: true) : []
+      def existing_env_lines
+        File.exist?(env_path) ? File.readlines(env_path, chomp: true, encoding: FILE_ENCODING) : []
+      end
 
       def resolved_values(lines)
         dev_port = (env_value(lines, 'DEV_PORT') || allocate_dev_port).to_s
@@ -123,7 +126,7 @@ module Rails
 
       def peer_env_lines(path)
         env_file = File.join(path, ENV_FILE_NAME)
-        File.exist?(env_file) ? File.readlines(env_file, chomp: true) : []
+        File.exist?(env_file) ? File.readlines(env_file, chomp: true, encoding: FILE_ENCODING) : []
       end
 
       def peers_root = File.dirname(@target_dir)

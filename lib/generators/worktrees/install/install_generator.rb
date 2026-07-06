@@ -36,6 +36,8 @@ module Worktrees
                      'follow-up edits when safe; also generate bin/ob'
                    ].join(' ')
 
+      FILE_ENCODING = 'UTF-8'.freeze
+
       FOLLOW_UP_TEMPLATE = <<~TEXT.freeze
           ============================================
             rails-worktrees installed successfully! 🚂
@@ -130,7 +132,7 @@ module Worktrees
 
       def database_update_result
         result = ::Rails::Worktrees::DatabaseConfigUpdater.new(
-          content: File.read(database_config_path)
+          content: File.read(database_config_path, encoding: FILE_ENCODING)
         ).call
 
         File.write(database_config_path, result.content) if result.changed?
@@ -181,7 +183,9 @@ module Worktrees
           return
         end
 
-        result = ::Rails::Worktrees::ProcfileUpdater.new(content: File.read(procfile_path)).call
+        result = ::Rails::Worktrees::ProcfileUpdater.new(
+          content: File.read(procfile_path, encoding: FILE_ENCODING)
+        ).call
         File.write(procfile_path, result.content) if result.changed?
         announce_updater_result('Procfile.dev', result)
       end
@@ -193,7 +197,9 @@ module Worktrees
           return
         end
 
-        result = ::Rails::Worktrees::PumaConfigUpdater.new(content: File.read(puma_config_path)).call
+        result = ::Rails::Worktrees::PumaConfigUpdater.new(
+          content: File.read(puma_config_path, encoding: FILE_ENCODING)
+        ).call
         File.write(puma_config_path, result.content) if result.changed?
         announce_updater_result('config/puma.rb', result)
       end
@@ -203,7 +209,7 @@ module Worktrees
         return announce_missing_mise_toml unless path
 
         result = ::Rails::Worktrees::MiseTomlUpdater.new(
-          content: File.read(path),
+          content: File.read(path, encoding: FILE_ENCODING),
           file_name: File.basename(path)
         ).call
 
@@ -249,11 +255,17 @@ module Worktrees
 
       def git_repo?
         _stdout_str, _stderr_str, status = Open3.capture3(
-          'git', 'rev-parse', '--is-inside-work-tree', chdir: destination_root
+          git_process_env, 'git', 'rev-parse', '--is-inside-work-tree',
+          chdir: destination_root,
+          unsetenv_others: true
         )
         status.success?
       rescue Errno::ENOENT
         false
+      end
+
+      def git_process_env
+        ENV.to_h.slice('HOME', 'PATH')
       end
 
       def conductor_workspace_root

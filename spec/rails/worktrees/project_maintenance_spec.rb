@@ -105,4 +105,22 @@ RSpec.describe Rails::Worktrees::ProjectMaintenance do
     expect(bin_wt.make_executable).to be(true)
     expect(bin_wt.apply_messages).to eq(['Restored executable permissions on bin/wt.'])
   end
+
+  it 'marks the older Ruby bin/wt binstub as fixable with the self-bootstrapping template' do
+    write_file('bin/wt', <<~RUBY)
+      #!/usr/bin/env ruby
+      ENV['BUNDLE_GEMFILE'] ||= File.expand_path('../Gemfile', __dir__)
+
+      require 'bundler/setup'
+      load Gem.bin_path('rails-worktrees', 'wt')
+    RUBY
+
+    report = described_class.new(root: tmpdir).call
+    bin_wt = check(report, :bin_wt)
+
+    expect(bin_wt).to be_fixable
+    expect(bin_wt.updated_content).to eq(managed_wt_template)
+    expect(bin_wt.updated_content).to start_with('#!/usr/bin/env bash')
+    expect(bin_wt.updated_content).to include('mise exec')
+  end
 end

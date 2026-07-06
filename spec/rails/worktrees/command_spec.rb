@@ -1,5 +1,6 @@
 require 'fileutils'
 require 'open3'
+require 'rbconfig'
 require 'stringio'
 require 'tmpdir'
 
@@ -95,6 +96,18 @@ RSpec.describe Rails::Worktrees::Command do
       expect(out.string).to include('Worktree ready')
       expect(out.string).to include("Port:   #{dev_port}")
       expect(out.string).to include('Suffix: _feature_one')
+    end
+
+    it 'ignores inherited Git hook repository environment variables' do
+      out = StringIO.new
+      poisoned_env = {
+        'GIT_DIR' => origin_path,
+        'GIT_WORK_TREE' => tmpdir
+      }
+
+      expect(build_command(argv: ['feature-one'], env: poisoned_env, stdout: out).run).to eq(0)
+      expect(File.directory?(File.join(configuration.workspace_root, 'app', 'feature-one'))).to be(true)
+      expect(out.string).to include('Worktree ready')
     end
 
     it 'prints derived env values without creating a worktree' do
@@ -585,6 +598,20 @@ RSpec.describe Rails::Worktrees::Command do
       expect(refreshed_out.string).to include('Doctor found no issues.')
     end
 
+    it 'does not crash wt doctor under a C locale when managed config contains emoji' do
+      install_worktrees_files(initializer: <<~RUBY)
+        Rails.application.config.x.rails_worktrees.tap do |config|
+          config.branch_prefix = '🚂'
+        end
+      RUBY
+
+      stdout, stderr, status = run_doctor_under_c_locale
+
+      expect(status).to be_success, stderr
+      expect(stderr).not_to include('Encoding::CompatibilityError')
+      expect(stdout).to include('Git repository detected')
+    end
+
     it 'dry-runs wt update without changing files' do
       install_worktrees_files(initializer: <<~RUBY)
         Rails::Worktrees.configure do |config|
@@ -600,6 +627,19 @@ RSpec.describe Rails::Worktrees::Command do
       expect(out.string).to include('Would update config/initializers/rails_worktrees.rb')
       expect(out.string).to include('Dry run complete')
       expect(out.string).to include('No changes were made.')
+    end
+
+    it 'rewrites an older Ruby bin/wt binstub during wt update' do
+      install_worktrees_files
+      wt_path = write_repo_file('bin/wt', <<~RUBY)
+        #!/usr/bin/env ruby
+        require 'bundler/setup'
+        load Gem.bin_path('rails-worktrees', 'wt')
+      RUBY
+
+      expect(build_command(argv: ['update']).run).to eq(0)
+      expect(File.read(wt_path, encoding: 'UTF-8')).to eq(managed_wt_template)
+      expect(File.executable?(wt_path)).to be(true)
     end
 
     it 'restores executable permissions for managed wrapper scripts during wt update' do
@@ -761,7 +801,9 @@ RSpec.describe Rails::Worktrees::Command do
   end
 
   def git!(*args)
-    stdout_str, stderr_str, status = Open3.capture3(git_env, 'git', *args)
+    stdout_str, stderr_str, status = Open3.capture3(git_env, 'git', *args, unsetenv_others: true)
+    stdout_str = stdout_str.dup.force_encoding(Encoding::UTF_8)
+    stderr_str = stderr_str.dup.force_encoding(Encoding::UTF_8)
     return stdout_str if status.success?
 
     raise [stdout_str, stderr_str].join("\n")
@@ -771,7 +813,11 @@ RSpec.describe Rails::Worktrees::Command do
 
   def local_branch_exists?(branch_name)
     _stdout_str, _stderr_str, status = Open3.capture3(
-      git_env, 'git', '-C', repo_path, 'show-ref', '--verify', '--quiet', "refs/heads/#{branch_name}"
+      git_env,
+      'git',
+      '-C', repo_path,
+      'show-ref', '--verify', '--quiet', "refs/heads/#{branch_name}",
+      unsetenv_others: true
     )
     status.success?
   end
@@ -791,8 +837,47 @@ RSpec.describe Rails::Worktrees::Command do
     StringIO.new(content).tap { |io| io.define_singleton_method(:tty?) { true } }
   end
 
+  def run_doctor_under_c_locale
+    Open3.capture3(
+      { 'LANG' => 'C', 'LC_ALL' => 'C' },
+      RbConfig.ruby,
+      '-I', File.expand_path('../../../lib', __dir__),
+      '-e', doctor_under_c_locale_script,
+      chdir: repo_path
+    )
+  end
+
+  def doctor_under_c_locale_script
+    <<~RUBY
+      require 'stringio'
+      require 'rails/worktrees'
+
+      config = Rails::Worktrees::Configuration.new
+      config.workspace_root = #{workspace_root_override.inspect}
+      config.used_names_file = #{File.join(tmpdir, 'state', 'used-names.tsv').inspect}
+      config.name_sources_path = #{File.join(tmpdir, 'names').inspect}
+      config.legacy_used_names_files = []
+      config.post_create_command = false
+
+      stdout = StringIO.new
+      stderr = StringIO.new
+      command = Rails::Worktrees::Command.new(
+        argv: ['doctor'],
+        io: { stdin: StringIO.new, stdout: stdout, stderr: stderr },
+        env: ENV.to_h.slice('PATH', 'HOME'),
+        cwd: #{repo_path.inspect},
+        configuration: config
+      )
+      command.run
+      STDOUT.write(stdout.string)
+      STDERR.write(stderr.string)
+    RUBY
+  end
+
   def git_env
     {
+      'HOME' => ENV.fetch('HOME', ''),
+      'PATH' => ENV.fetch('PATH', ''),
       'GIT_AUTHOR_NAME' => 'Test User',
       'GIT_AUTHOR_EMAIL' => 'test@example.com',
       'GIT_COMMITTER_NAME' => 'Test User',

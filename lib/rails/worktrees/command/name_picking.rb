@@ -4,6 +4,8 @@ module Rails
       # Auto-picking names from bundled .txt files and tracking retired names.
       # rubocop:disable Metrics/ModuleLength
       module NamePicking
+        FILE_ENCODING = 'UTF-8'.freeze
+
         private
 
         def resolve_worktree_name(project_name, workspaces)
@@ -48,7 +50,7 @@ module Rails
         end
 
         def source_names(source_file)
-          File.readlines(source_file, chomp: true).filter_map do |line|
+          File.readlines(source_file, chomp: true, encoding: FILE_ENCODING).filter_map do |line|
             name = line.delete_suffix("\r").strip
             next if name.empty? || name.start_with?('#')
 
@@ -74,7 +76,7 @@ module Rails
           state_file = retired_names_file
           return false unless state_file
 
-          File.foreach(state_file).any? { |line| line.split("\t", 2).first == candidate }
+          File.foreach(state_file, encoding: FILE_ENCODING).any? { |line| line.split("\t", 2).first == candidate }
         end
 
         def record_retired_name(worktree_name, project_name)

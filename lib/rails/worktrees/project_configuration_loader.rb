@@ -22,7 +22,7 @@ module Rails
       def call
         return configuration unless initializer_path && File.file?(initializer_path)
 
-        body = extract_configuration_body(File.read(initializer_path))
+        body = extract_configuration_body(File.read(initializer_path, encoding: 'UTF-8'))
         return configuration unless body
 
         recorder = AssignmentRecorder.new(configuration)

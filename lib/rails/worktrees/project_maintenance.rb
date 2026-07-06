@@ -49,6 +49,7 @@ module Rails
       # rubocop:enable Style/RedundantStructKeywordInit
 
       TEMPLATE_ROOT = File.expand_path('../../generators/rails/worktrees/templates', __dir__)
+      FILE_ENCODING = 'UTF-8'.freeze
 
       def initialize(root:)
         @root = root
@@ -100,10 +101,10 @@ module Rails
         path = absolute_path(config.fetch(:relative_path))
         return nil if config.fetch(:optional) && !File.exist?(path)
 
-        desired_content = File.read(config.fetch(:template_path))
+        desired_content = read_text(config.fetch(:template_path))
         return template_missing_check(config, desired_content) unless File.exist?(path)
 
-        current_content = File.read(path)
+        current_content = read_text(path)
         if current_content == desired_content
           if executable_mode_current?(config, path)
             return ok_check(config, "#{config.fetch(:relative_path)} is up to date.")
@@ -168,7 +169,7 @@ module Rails
           )
         end
 
-        updater_result_check(config, InitializerUpdater.new(content: File.read(path)).call)
+        updater_result_check(config, InitializerUpdater.new(content: read_text(path)).call)
       end
 
       def database_check
@@ -187,7 +188,7 @@ module Rails
           )
         end
 
-        result = DatabaseConfigUpdater.new(content: File.read(path)).call
+        result = DatabaseConfigUpdater.new(content: read_text(path)).call
         return updated_database_check(config, result) if result.changed?
 
         if database_configured?(result)
@@ -244,7 +245,7 @@ module Rails
         path = absolute_path(config.fetch(:relative_path))
         return unless File.exist?(path)
 
-        updater_result_check(config, yield(File.read(path)))
+        updater_result_check(config, yield(read_text(path)))
       end
 
       def mise_check
@@ -265,7 +266,7 @@ module Rails
 
       def mise_updater_result(relative_path)
         MiseTomlUpdater.new(
-          content: File.read(absolute_path(relative_path)),
+          content: read_text(absolute_path(relative_path)),
           file_name: File.basename(relative_path)
         ).call
       end
@@ -317,6 +318,10 @@ module Rails
           make_executable: attributes.fetch(:make_executable, false),
           apply_messages: attributes.fetch(:apply_messages, [])
         )
+      end
+
+      def read_text(path)
+        File.read(path, encoding: FILE_ENCODING)
       end
 
       def absolute_path(relative_path)

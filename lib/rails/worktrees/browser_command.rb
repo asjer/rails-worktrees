@@ -8,6 +8,7 @@ module Rails
     class BrowserCommand
       APP_ROOT_ENV_KEY = 'RAILS_WORKTREES_APP_ROOT'.freeze
       ENV_FILE_NAME = '.env'.freeze
+      FILE_ENCODING = 'UTF-8'.freeze
 
       def initialize(argv:, io:, env:, cwd:, host_os: RbConfig::CONFIG['host_os'])
         @argv = argv.dup
@@ -127,7 +128,7 @@ module Rails
       def dev_port_from_env_file
         return unless File.file?(env_path)
 
-        lines = File.readlines(env_path, chomp: true)
+        lines = File.readlines(env_path, chomp: true, encoding: FILE_ENCODING)
         env_value(lines, 'DEV_PORT')
       rescue StandardError => e
         raise Error, "Could not read #{env_path}: #{e.message}"
