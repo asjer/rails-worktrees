@@ -2,6 +2,7 @@
 require 'spec_helper'
 require 'fileutils'
 require 'open3'
+require 'rbconfig'
 require 'tmpdir'
 
 RSpec.describe 'generated bin/wt template' do
@@ -23,6 +24,8 @@ RSpec.describe 'generated bin/wt template' do
   def log_path = File.join(tmpdir, 'bootstrap.log')
   def wt_path = File.join(app_root, 'bin', 'wt')
   def real_app_root = File.realpath(app_root)
+  def fallback_gem_home = File.join(tmpdir, 'fallback-gems')
+  def current_lib_path = File.expand_path('../../../lib', __dir__)
 
   def install_template
     FileUtils.mkdir_p(File.dirname(wt_path))
@@ -55,6 +58,58 @@ RSpec.describe 'generated bin/wt template' do
       } >> "$WT_LOG"
       exit 0
     BASH
+  end
+
+  def install_real_ruby_shim
+    install_fake_tool('ruby', <<~BASH)
+      #!/usr/bin/env bash
+      exec "#{RbConfig.ruby}" "$@"
+    BASH
+  end
+
+  def install_fallback_rails_worktrees_gem
+    version = Rails::Worktrees::VERSION
+    gem_root = File.join(fallback_gem_home, 'gems', "rails-worktrees-#{version}")
+    FileUtils.mkdir_p(File.join(gem_root, 'exe'))
+    FileUtils.mkdir_p(File.join(fallback_gem_home, 'specifications'))
+    File.write(File.join(gem_root, 'exe', 'wt'), <<~RUBY)
+      #!/usr/bin/env ruby
+      $LOAD_PATH.unshift(#{current_lib_path.inspect})
+      require 'rails/worktrees'
+      exit(Rails::Worktrees::CLI.new.start)
+    RUBY
+    FileUtils.chmod(0o755, File.join(gem_root, 'exe', 'wt'))
+
+    spec = Gem::Specification.new do |gem_spec|
+      gem_spec.name = 'rails-worktrees'
+      gem_spec.version = version
+      gem_spec.summary = 'Test rails-worktrees fallback executable'
+      gem_spec.authors = ['RSpec']
+      gem_spec.files = ['exe/wt']
+      gem_spec.bindir = 'exe'
+      gem_spec.executables = ['wt']
+    end
+
+    File.write(File.join(fallback_gem_home, 'specifications', "rails-worktrees-#{version}.gemspec"), spec.to_ruby)
+  end
+
+  def initialize_git_app
+    FileUtils.mkdir_p(File.join(app_root, 'bin'))
+    File.write(File.join(app_root, 'bin', 'rails'), "#!/usr/bin/env ruby\n")
+    FileUtils.chmod(0o755, File.join(app_root, 'bin', 'rails'))
+
+    stdout, stderr, status = Open3.capture3('git', 'init', chdir: app_root)
+    expect(status).to be_success, stdout + stderr
+  end
+
+  def install_bootstrap_fallback_test_app
+    install_real_ruby_shim
+    install_fallback_rails_worktrees_gem
+    initialize_git_app
+    File.write(File.join(app_root, 'Gemfile'), <<~RUBY)
+      source 'https://rubygems.org'
+      gem 'rails_worktrees_missing_bootstrap_test_gem', '0.0.1'
+    RUBY
   end
 
   def install_fake_mise
@@ -112,7 +167,7 @@ RSpec.describe 'generated bin/wt template' do
     log_lines.grep(/\A#{Regexp.escape(name)}=/).first&.delete_prefix("#{name}=")
   end
 
-  it 'trusts and re-execs through mise before Ruby/Bundler under a sparse PATH' do
+  it 'trusts and re-execs through mise before the Ruby loader under a sparse PATH' do
     File.write(File.join(app_root, 'mise.toml'), "[tools]\nruby = '3.4.8'\n")
     install_fake_mise
 
@@ -125,7 +180,7 @@ RSpec.describe 'generated bin/wt template' do
     expect(lines).to include('ruby')
     expect(lines.index('mise_exec')).to be < lines.index('ruby')
     expect(lines).to include("BUNDLE_GEMFILE=#{File.join(real_app_root, 'Gemfile')}")
-    expect(lines.grep(/ruby_args=/).first).to include('-rbundler/setup')
+    expect(lines.grep(/ruby_args=/).first).to include('/dev/fd/3 setup --dry-run')
     expect(lines.grep(/LANG=/).first).to match(/UTF-?8/i)
     expect(lines.grep(/LC_ALL=/).first).to match(/UTF-?8/i)
   end
@@ -141,7 +196,7 @@ RSpec.describe 'generated bin/wt template' do
     expect(log_lines.grep(/\Amise_/)).to be_empty
   end
 
-  it 'falls back to Ruby/Bundler when mise is unavailable' do
+  it 'falls back to the Ruby loader when mise is unavailable' do
     File.write(File.join(app_root, 'mise.toml'), "[tools]\nruby = '3.4.8'\n")
 
     _stdout, stderr, status = run_wt('BASH_ENV' => hide_mise_bash_env)
@@ -149,6 +204,36 @@ RSpec.describe 'generated bin/wt template' do
     expect(status).to be_success, stderr
     expect(log_lines).to include('ruby')
     expect(log_lines.grep(/\Amise_/)).to be_empty
+  end
+
+  it 'runs setup dry-run through the fallback executable when the app bundle is incomplete' do
+    install_bootstrap_fallback_test_app
+
+    stdout, stderr, status = run_wt(
+      { 'GEM_HOME' => fallback_gem_home, 'GEM_PATH' => fallback_gem_home },
+      %w[setup --dry-run]
+    )
+
+    expect(status).to be_success, stderr
+    expect(stderr).to include('app bundle is incomplete')
+    expect(stderr).to include('falling back to the globally installed wt executable')
+    expect(stdout).to include('Dry run: previewing worktree changes without applying them')
+    expect(stdout).to include('Would run: bundle install')
+    expect(stdout).to include('Dry run complete')
+  end
+
+  it 'prints a clear incomplete-bundle error for non-bootstrap commands' do
+    install_bootstrap_fallback_test_app
+
+    _stdout, stderr, status = run_wt(
+      { 'GEM_HOME' => fallback_gem_home, 'GEM_PATH' => fallback_gem_home },
+      %w[remove old-worktree]
+    )
+
+    expect(status).not_to be_success
+    expect(stderr).to include('cannot start wt because the app bundle is incomplete')
+    expect(stderr).to include('Run `bundle install` or `bin/wt setup`')
+    expect(stderr).not_to include('falling back to the globally installed wt executable')
   end
 
   it 'does not export LC_ALL when it was unset while fixing LANG' do
