@@ -1,7 +1,7 @@
 PATH
   remote: .
   specs:
-    rails-worktrees (0.7.2)
+    rails-worktrees (0.7.3)
       railties (>= 7.1, < 8.2)
 
 GEM
