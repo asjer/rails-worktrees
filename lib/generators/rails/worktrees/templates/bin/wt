@@ -62,4 +62,53 @@ if [ -n "$WT_MISE_CONFIG" ] && [ -z "${RAILS_WORKTREES_BOOTSTRAPPED:-}" ] && com
 fi
 
 export BUNDLE_GEMFILE="${BUNDLE_GEMFILE:-$WT_APP_ROOT/Gemfile}"
-exec ruby -rbundler/setup -e 'load Gem.bin_path("rails-worktrees", "wt")' -- "$@"
+exec ruby /dev/fd/3 "$@" 3<<'RUBY'
+def rails_worktrees_bootstrap_safe_invocation?(argv)
+  args = argv.map(&:to_s)
+  return true if args.empty?
+  return true if %w[-h --help -v --version].include?(args.first)
+  return true if %w[--env --print-env].include?(args.first)
+
+  command_args = args.reject { |arg| %w[--dry-run --skip-setup --env --print-env].include?(arg) }
+  command = command_args.first
+
+  return true if %w[setup doctor update].include?(command)
+  return false if %w[remove delete prune].include?(command)
+
+  command_args.length <= 1
+end
+
+def rails_worktrees_incomplete_bundle_message(error)
+  error.message.to_s.lines.first.to_s.strip
+end
+
+def rails_worktrees_load_without_bundler(original_error)
+  ENV.delete('BUNDLE_GEMFILE')
+  Gem.clear_paths if Gem.respond_to?(:clear_paths)
+  load Gem.bin_path('rails-worktrees', 'wt')
+rescue Gem::Exception, LoadError => fallback_error
+  warn 'rails-worktrees: app bundle is incomplete and no fallback rails-worktrees executable could be loaded.'
+  warn "  Bundler: #{rails_worktrees_incomplete_bundle_message(original_error)}"
+  warn "  Fallback: #{fallback_error.class}: #{fallback_error.message}"
+  warn 'Run `bundle install` or install rails-worktrees outside the app bundle, then retry `bin/wt setup`.'
+  exit 1
+end
+
+begin
+  require 'bundler/setup'
+  load Gem.bin_path('rails-worktrees', 'wt')
+rescue StandardError => error
+  raise unless defined?(Bundler::GemNotFound) && error.is_a?(Bundler::GemNotFound)
+
+  if rails_worktrees_bootstrap_safe_invocation?(ARGV)
+    warn 'rails-worktrees: app bundle is incomplete; falling back to the globally installed wt executable.'
+    warn "  #{rails_worktrees_incomplete_bundle_message(error)}"
+    rails_worktrees_load_without_bundler(error)
+  end
+
+  warn 'rails-worktrees: cannot start wt because the app bundle is incomplete.'
+  warn "  #{rails_worktrees_incomplete_bundle_message(error)}"
+  warn 'Run `bundle install` or `bin/wt setup` to install missing gems, then retry.'
+  exit 1
+end
+RUBY
