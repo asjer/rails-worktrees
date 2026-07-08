@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.3](https://github.com/asjer/rails-worktrees/compare/v0.7.2...v0.7.3) (2026-07-08)
+
+
+### Bug Fixes
+
+* **wt:** add bundle fallback for wt bootstrap ([f5ab21e](https://github.com/asjer/rails-worktrees/commit/f5ab21ef1014ea2baaa67dca1ce085b6b70dfcd5))
+
 ## [0.7.2](https://github.com/asjer/rails-worktrees/compare/v0.7.1...v0.7.2) (2026-07-06)
 
 
