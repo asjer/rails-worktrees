@@ -158,7 +158,8 @@ module Rails
                        'BUNDLE_GEMFILE', 'BUNDLE_PATH', 'GEM_HOME', 'GEM_PATH',
                        'RUBY_VERSION', 'RAILS_ENV', 'NODE_ENV',
                        'XDG_STATE_HOME', 'XDG_DATA_HOME', 'XDG_CONFIG_HOME',
-                       'DEV_PORT', 'WORKTREE_DATABASE_SUFFIX', 'MISE_CEILING_PATHS')
+                       'DEV_PORT', 'WORKTREE_DATABASE_SUFFIX',
+                       'MISE_CEILING_PATHS', 'MISE_TRUSTED_CONFIG_PATHS')
       end
 
       attr_reader :runtime_env

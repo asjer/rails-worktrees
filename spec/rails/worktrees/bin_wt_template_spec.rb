@@ -54,6 +54,7 @@ RSpec.describe 'generated bin/wt template' do
         printf 'ruby_args=%s\n' "$*"
         printf 'BUNDLE_GEMFILE=%s\n' "${BUNDLE_GEMFILE:-}"
         printf 'MISE_CEILING_PATHS=%s\n' "${MISE_CEILING_PATHS:-}"
+        printf 'MISE_TRUSTED_CONFIG_PATHS=%s\n' "${MISE_TRUSTED_CONFIG_PATHS:-}"
         printf 'LANG=%s\n' "${LANG:-}"
         printf 'LC_ALL=%s\n' "${LC_ALL:-}"
       } >> "$WT_LOG"
@@ -129,6 +130,7 @@ RSpec.describe 'generated bin/wt template' do
           fi
           printf 'printf "mise_env=%%s\\n" %q >> "$WT_LOG"\n' "$*"
           printf 'printf "mise_env_ceiling=%%s\\n" %q >> "$WT_LOG"\n' "${MISE_CEILING_PATHS:-}"
+          printf 'printf "mise_env_trusted=%%s\\n" %q >> "$WT_LOG"\n' "${MISE_TRUSTED_CONFIG_PATHS:-}"
           exit 0
           ;;
         *)
@@ -190,15 +192,15 @@ RSpec.describe 'generated bin/wt template' do
   end
 
   def expect_app_mise_activation_before_ruby(lines)
-    expect(lines).to include("mise_trust=#{File.join(real_app_root, 'mise.toml')}")
-    expect(lines).to include("mise_trust=#{File.join(real_app_root, 'mise.local.toml')}")
     expect(lines).to include("mise_env=-C #{real_app_root} -s bash")
     expect(lines).to include("mise_env_ceiling=#{File.dirname(real_app_root)}")
+    expect(lines).to include("mise_env_trusted=#{real_app_root}")
     expect(lines).to include("MISE_CEILING_PATHS=#{File.dirname(real_app_root)}")
+    expect(lines).to include("MISE_TRUSTED_CONFIG_PATHS=#{real_app_root}")
     expect(lines.index("mise_env=-C #{real_app_root} -s bash")).to be < lines.index('ruby')
   end
 
-  it 'trusts and activates mise before the Ruby loader under a sparse PATH' do
+  it 'scopes mise trust and activates before the Ruby loader under a sparse PATH' do
     install_app_mise_configs
     install_fake_mise
 
@@ -225,7 +227,7 @@ RSpec.describe 'generated bin/wt template' do
     expect(log_lines.grep(/\Amise_/)).to be_empty
   end
 
-  it 'trusts every repository ancestor mise config before activating without a project-local config' do
+  it 'scopes mise discovery and trust to the repository root' do
     install_ancestor_mise_configs
     initialize_parent_git_repo
     install_fake_mise
@@ -234,16 +236,26 @@ RSpec.describe 'generated bin/wt template' do
 
     expect(status).to be_success, stderr
     lines = log_lines
-    repo_config_trust = "mise_trust=#{File.realpath(File.join(tmpdir, 'repo', 'mise.toml'))}"
-    apps_config_trust = "mise_trust=#{File.realpath(File.join(tmpdir, 'repo', 'apps', 'mise.toml'))}"
     mise_env_activation = "mise_env=-C #{real_app_root} -s bash"
 
-    expect(lines).to include(repo_config_trust, apps_config_trust, mise_env_activation, 'ruby')
-    expect(lines).not_to include("mise_trust=#{File.realpath(File.join(tmpdir, 'mise.toml'))}")
-    expect(lines).to include("mise_env_ceiling=#{File.realpath(tmpdir)}")
-    expect(lines.index(repo_config_trust)).to be < lines.index(mise_env_activation)
-    expect(lines.index(apps_config_trust)).to be < lines.index(mise_env_activation)
+    expect(lines).to include(mise_env_activation, "mise_env_ceiling=#{File.realpath(tmpdir)}")
+    expect(lines).to include("mise_env_trusted=#{File.realpath(File.join(tmpdir, 'repo'))}", 'ruby')
     expect(lines.index(mise_env_activation)).to be < lines.index('ruby')
+  end
+
+  it 'ignores inherited Git repository selectors when finding the trust root' do
+    install_ancestor_mise_configs
+    initialize_parent_git_repo
+    install_fake_mise
+    other_repo = File.join(tmpdir, 'other')
+    FileUtils.mkdir_p(other_repo)
+    stdout, stderr, status = Open3.capture3('git', 'init', chdir: other_repo)
+    expect(status).to be_success, stdout + stderr
+
+    _stdout, run_stderr, run_status = run_wt('GIT_DIR' => File.join(other_repo, '.git'), 'GIT_WORK_TREE' => other_repo)
+
+    expect(run_status).to be_success, run_stderr
+    expect(log_lines).to include("mise_env_trusted=#{File.realpath(File.join(tmpdir, 'repo'))}")
   end
 
   it 'aborts when mise environment activation fails' do

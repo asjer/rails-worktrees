@@ -164,25 +164,20 @@ bin/wt prune --dry-run
 
 Versions before 0.7.1 generated `bin/wt` as a Ruby shebang wrapper. On hosts where Ruby is provided by mise but not already on `PATH`, that legacy wrapper can fail with `/usr/bin/env: ruby: No such file or directory` before rails-worktrees can activate mise.
 
-Use the current gem executable once to repair the app-owned wrapper. Trust the applicable app-root mise hierarchy first so `mise exec` can load Ruby from the same configuration the repaired wrapper will use:
+Use the current gem executable once to repair the app-owned wrapper. Scope mise discovery to the checkout and treat in-repository mise configs as trusted for this recovery shell, so `mise exec` loads Ruby from the same configuration the repaired wrapper will use:
 
 ```bash
 # From the Rails app root
 root=$(pwd -P)
-trust_root=$(git -C "$root" rev-parse --show-toplevel 2>/dev/null || printf '%s' "$root")
+trust_root=$(
+  unset GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR GIT_INDEX_FILE \
+    GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES
+  git -C "$root" rev-parse --show-toplevel 2>/dev/null || printf '%s' "$root"
+)
 trust_root=$(cd "$trust_root" && pwd -P)
 MISE_CEILING_PATHS=$(dirname "$trust_root")
-export MISE_CEILING_PATHS
-dir=$root
-while :; do
-  for config in "$dir"/mise.toml "$dir"/.mise.toml; do
-    [ ! -f "$config" ] || mise trust "$config"
-  done
-  [ "$dir" = "$trust_root" ] && break
-  parent=$(dirname "$dir")
-  [ "$parent" = "$dir" ] && break
-  dir=$parent
-done
+MISE_TRUSTED_CONFIG_PATHS="$trust_root"
+export MISE_CEILING_PATHS MISE_TRUSTED_CONFIG_PATHS
 
 mise exec -C "$root" -- ruby -v
 mise exec -C "$root" -- gem install rails-worktrees --no-document
@@ -193,7 +188,7 @@ git diff --stat
 
 Review the diff before committing. `wt update` applies every safe managed maintenance fix it finds, so the resulting commit can include `bin/wt` plus other generated installer drift such as the initializer, database configuration, Procfile, Puma config, mise config, or `bin/ob`.
 
-New installs and repaired apps use a bash bootstrap wrapper that activates mise from the app root before loading Ruby/Bundler, trusting app-root ancestor configs only up to the repository root. That covers both app-local and in-repository higher-scope mise Ruby configuration without trusting an unrelated caller directory or configs above the checkout. The wrapper also falls back to the globally installed `wt` executable for bootstrap-safe commands such as `wt setup --dry-run` when the app bundle is incomplete.
+New installs and repaired apps use a bash bootstrap wrapper that activates mise from the app root before loading Ruby/Bundler, trusting mise configs only inside the repository root and bounding discovery above the checkout. That covers app-local, in-repository higher-scope, local override, and environment-specific mise configuration without trusting an unrelated caller directory or configs above the checkout. The wrapper also falls back to the globally installed `wt` executable for bootstrap-safe commands such as `wt setup --dry-run` when the app bundle is incomplete.
 
 
 ### Interactive prompts
