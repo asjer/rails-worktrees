@@ -18,7 +18,7 @@ RSpec.describe 'generated bin/wt template' do
     FileUtils.rm_rf(tmpdir)
   end
 
-  def app_root = File.join(tmpdir, 'app')
+  def app_root = File.join(tmpdir, 'repo', 'apps', 'app')
   def home = File.join(tmpdir, 'home')
   def local_bin = File.join(home, '.local', 'bin')
   def log_path = File.join(tmpdir, 'bootstrap.log')
@@ -120,11 +120,10 @@ RSpec.describe 'generated bin/wt template' do
           printf 'mise_trust=%s\n' "${2:-<current-or-parent>}" >> "$WT_LOG"
           exit 0
           ;;
-        exec)
-          echo mise_exec >> "$WT_LOG"
+        env)
           shift
-          [ "${1:-}" = "--" ] && shift
-          exec "$@"
+          printf 'printf "mise_env=%%s\\n" %q >> "$WT_LOG"\n' "$*"
+          exit 0
           ;;
         *)
           printf 'mise_unexpected=%s\n' "$*" >> "$WT_LOG"
@@ -167,7 +166,13 @@ RSpec.describe 'generated bin/wt template' do
     log_lines.grep(/\A#{Regexp.escape(name)}=/).first&.delete_prefix("#{name}=")
   end
 
-  it 'trusts and re-execs through mise before the Ruby loader under a sparse PATH' do
+  def install_ancestor_mise_configs
+    File.write(File.join(tmpdir, 'repo', 'mise.toml'), "[tools]\nruby = '3.4.8'\n")
+    FileUtils.mkdir_p(File.join(tmpdir, 'repo', 'apps'))
+    File.write(File.join(tmpdir, 'repo', 'apps', 'mise.toml'), "[tools]\nnode = '22'\n")
+  end
+
+  it 'trusts and activates mise before the Ruby loader under a sparse PATH' do
     File.write(File.join(app_root, 'mise.toml'), "[tools]\nruby = '3.4.8'\n")
     install_fake_mise
 
@@ -176,9 +181,9 @@ RSpec.describe 'generated bin/wt template' do
     expect(status).to be_success, stderr
     lines = log_lines
     expect(lines).to include("mise_trust=#{File.join(real_app_root, 'mise.toml')}")
-    expect(lines).to include('mise_exec')
+    expect(lines).to include("mise_env=-C #{real_app_root} -s bash")
     expect(lines).to include('ruby')
-    expect(lines.index('mise_exec')).to be < lines.index('ruby')
+    expect(lines.index("mise_env=-C #{real_app_root} -s bash")).to be < lines.index('ruby')
     expect(lines).to include("BUNDLE_GEMFILE=#{File.join(real_app_root, 'Gemfile')}")
     expect(lines.grep(/ruby_args=/).first).to include('/dev/fd/3 setup --dry-run')
     expect(lines.grep(/LANG=/).first).to match(/UTF-?8/i)
@@ -196,19 +201,22 @@ RSpec.describe 'generated bin/wt template' do
     expect(log_lines.grep(/\Amise_/)).to be_empty
   end
 
-  it 'trusts the current or parent mise config before re-execing without a project-local config' do
-    File.write(File.join(tmpdir, 'mise.toml'), "[tools]\nruby = '3.4.8'\n")
+  it 'trusts every ancestor mise config before activating without a project-local config' do
+    install_ancestor_mise_configs
     install_fake_mise
 
     _stdout, stderr, status = run_wt
 
     expect(status).to be_success, stderr
     lines = log_lines
-    expect(lines).to include('mise_trust=<current-or-parent>')
-    expect(lines).to include('mise_exec')
-    expect(lines).to include('ruby')
-    expect(lines.index('mise_trust=<current-or-parent>')).to be < lines.index('mise_exec')
-    expect(lines.index('mise_exec')).to be < lines.index('ruby')
+    repo_config_trust = "mise_trust=#{File.join(tmpdir, 'repo', 'mise.toml')}"
+    apps_config_trust = "mise_trust=#{File.join(tmpdir, 'repo', 'apps', 'mise.toml')}"
+    mise_env_activation = "mise_env=-C #{real_app_root} -s bash"
+
+    expect(lines).to include(repo_config_trust, apps_config_trust, mise_env_activation, 'ruby')
+    expect(lines.index(repo_config_trust)).to be < lines.index(mise_env_activation)
+    expect(lines.index(apps_config_trust)).to be < lines.index(mise_env_activation)
+    expect(lines.index(mise_env_activation)).to be < lines.index('ruby')
   end
 
   it 'falls back to the Ruby loader when mise is unavailable' do

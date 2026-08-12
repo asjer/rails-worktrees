@@ -47,22 +47,26 @@ fi
 WT_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 WT_SCRIPT_PATH="$WT_SCRIPT_DIR/$(basename "${BASH_SOURCE[0]}")"
 WT_APP_ROOT="$(cd "$WT_SCRIPT_DIR/.." && pwd -P)"
-WT_MISE_CONFIG=""
+wt_trust_mise_config_hierarchy() {
+  local dir config parent
+  dir="$WT_APP_ROOT"
 
-if [ -f "$WT_APP_ROOT/mise.toml" ]; then
-  WT_MISE_CONFIG="$WT_APP_ROOT/mise.toml"
-elif [ -f "$WT_APP_ROOT/.mise.toml" ]; then
-  WT_MISE_CONFIG="$WT_APP_ROOT/.mise.toml"
-fi
+  while :; do
+    for config in "$dir/mise.toml" "$dir/.mise.toml"; do
+      [ -f "$config" ] && mise trust "$config" >/dev/null || true
+    done
+
+    parent="$(dirname "$dir")"
+    [ "$parent" = "$dir" ] && break
+    dir="$parent"
+  done
+}
 
 if [ -z "${RAILS_WORKTREES_BOOTSTRAPPED:-}" ] && command -v mise >/dev/null 2>&1; then
-  if [ -n "$WT_MISE_CONFIG" ]; then
-    mise trust "$WT_MISE_CONFIG" >/dev/null || true
-  else
-    mise trust >/dev/null || true
-  fi
+  wt_trust_mise_config_hierarchy
+  eval "$(mise env -C "$WT_APP_ROOT" -s bash)"
   export RAILS_WORKTREES_BOOTSTRAPPED=1
-  exec mise exec -- "$WT_SCRIPT_PATH" "$@"
+  exec "$WT_SCRIPT_PATH" "$@"
 fi
 
 export BUNDLE_GEMFILE="${BUNDLE_GEMFILE:-$WT_APP_ROOT/Gemfile}"
