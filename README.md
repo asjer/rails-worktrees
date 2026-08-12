@@ -164,15 +164,18 @@ bin/wt prune --dry-run
 
 Versions before 0.7.1 generated `bin/wt` as a Ruby shebang wrapper. On hosts where Ruby is provided by mise but not already on `PATH`, that legacy wrapper can fail with `/usr/bin/env: ruby: No such file or directory` before rails-worktrees can activate mise.
 
-Use the current gem executable once to repair the app-owned wrapper:
+Use the current gem executable once to repair the app-owned wrapper. If the app has a local mise config, trust it before recovery so `mise exec` can load Ruby:
 
 ```bash
 # From the Rails app root
+[ ! -f mise.toml ] || mise trust mise.toml
+[ ! -f .mise.toml ] || mise trust .mise.toml
+mise exec -- ruby -v
 mise exec -- gem install rails-worktrees --no-document
-mise exec -- ruby -S wt update
+mise exec -- ruby -e 'load Gem.bin_path("rails-worktrees", "wt")' -- update
 ```
 
-Then commit the managed `bin/wt` change in the app. New installs and repaired apps use a bash bootstrap wrapper that trusts and re-execs through `mise` before loading Ruby/Bundler, and falls back to the globally installed `wt` executable for bootstrap-safe commands such as `wt setup --dry-run` when the app bundle is incomplete.
+Then commit the managed `bin/wt` change in the app. New installs and repaired apps use a bash bootstrap wrapper that re-execs through `mise` before loading Ruby/Bundler, trusting an app-local mise config first when present. That covers both app-local and higher-scope mise Ruby configuration. The wrapper also falls back to the globally installed `wt` executable for bootstrap-safe commands such as `wt setup --dry-run` when the app bundle is incomplete.
 
 
 ### Interactive prompts

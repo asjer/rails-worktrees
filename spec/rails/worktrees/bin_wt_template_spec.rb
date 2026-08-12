@@ -196,6 +196,19 @@ RSpec.describe 'generated bin/wt template' do
     expect(log_lines.grep(/\Amise_/)).to be_empty
   end
 
+  it 're-execs through mise without a project-local config' do
+    install_fake_mise
+
+    _stdout, stderr, status = run_wt
+
+    expect(status).to be_success, stderr
+    lines = log_lines
+    expect(lines).to include('mise_exec')
+    expect(lines).to include('ruby')
+    expect(lines.grep(/\Amise_trust=/)).to be_empty
+    expect(lines.index('mise_exec')).to be < lines.index('ruby')
+  end
+
   it 'falls back to the Ruby loader when mise is unavailable' do
     File.write(File.join(app_root, 'mise.toml'), "[tools]\nruby = '3.4.8'\n")
 
