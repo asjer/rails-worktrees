@@ -214,7 +214,8 @@ module Rails
         validate_update_args!
         announce_dry_run if dry_run?
 
-        current_root = resolve_repository_context[:current_root]
+        repository_root = resolve_repository_context[:current_root]
+        current_root = update_target_root(repository_root)
         report = project_maintenance_report(current_root)
         updated_count = 0
         identical_count = 0
@@ -258,9 +259,23 @@ module Rails
       end
 
       def validate_update_args!
-        raise Error, 'Usage: wt update [--dry-run]' unless @argv.length == 1
+        raise Error, 'Usage: wt update [--dry-run] [path]' unless [1, 2].include?(@argv.length)
         raise Error, 'The --force flag is only supported with wt remove.' if force?
         raise Error, 'The --skip-setup flag is only supported when creating a worktree.' if skip_setup?
+      end
+
+      def update_target_root(repository_root)
+        return repository_root unless @argv[1]
+
+        target_root = canonical_path(File.expand_path(@argv[1], @cwd))
+        raise Error, "Update target does not exist: #{target_root}" unless File.directory?(target_root)
+
+        assert_within_root!(
+          target_root,
+          repository_root,
+          "Refusing to update a path outside the current Git repository: #{target_root}"
+        )
+        target_root
       end
 
       def announce_prune_candidates(candidates)

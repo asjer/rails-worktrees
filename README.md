@@ -186,8 +186,8 @@ done
 
 mise exec -C "$root" -- ruby -v
 mise exec -C "$root" -- gem install rails-worktrees --no-document
-mise exec -C "$root" -- ruby -e 'load Gem.bin_path("rails-worktrees", "wt")' -- update --dry-run
-mise exec -C "$root" -- ruby -e 'load Gem.bin_path("rails-worktrees", "wt")' -- update
+mise exec -C "$root" -- ruby -e 'load Gem.bin_path("rails-worktrees", "wt")' -- update --dry-run "$root"
+mise exec -C "$root" -- ruby -e 'load Gem.bin_path("rails-worktrees", "wt")' -- update "$root"
 git diff --stat
 ```
 

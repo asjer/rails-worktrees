@@ -642,6 +642,21 @@ RSpec.describe Rails::Worktrees::Command do
       expect(File.executable?(wt_path)).to be(true)
     end
 
+    it 'updates an explicit nested Rails app root instead of the Git root' do
+      app_root = File.join(repo_path, 'apps', 'demo')
+      FileUtils.mkdir_p(File.join(app_root, 'bin'))
+      wt_path = File.join(app_root, 'bin', 'wt')
+      File.write(wt_path, <<~RUBY)
+        #!/usr/bin/env ruby
+        require 'bundler/setup'
+        load Gem.bin_path('rails-worktrees', 'wt')
+      RUBY
+
+      expect(build_command(argv: ['update', app_root], cwd: app_root).run).to eq(0)
+      expect(File.read(wt_path, encoding: 'UTF-8')).to eq(managed_wt_template)
+      expect(File.exist?(File.join(repo_path, 'bin', 'wt'))).to be(false)
+    end
+
     it 'restores executable permissions for managed wrapper scripts during wt update' do
       install_worktrees_files
       wt_path = File.join(repo_path, 'bin', 'wt')

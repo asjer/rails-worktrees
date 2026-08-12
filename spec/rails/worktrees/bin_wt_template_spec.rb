@@ -53,6 +53,7 @@ RSpec.describe 'generated bin/wt template' do
         echo ruby
         printf 'ruby_args=%s\n' "$*"
         printf 'BUNDLE_GEMFILE=%s\n' "${BUNDLE_GEMFILE:-}"
+        printf 'MISE_CEILING_PATHS=%s\n' "${MISE_CEILING_PATHS:-}"
         printf 'LANG=%s\n' "${LANG:-}"
         printf 'LC_ALL=%s\n' "${LC_ALL:-}"
       } >> "$WT_LOG"
@@ -183,20 +184,30 @@ RSpec.describe 'generated bin/wt template' do
     expect(status).to be_success, stdout + stderr
   end
 
-  it 'trusts and activates mise before the Ruby loader under a sparse PATH' do
+  def install_app_mise_configs
     File.write(File.join(app_root, 'mise.toml'), "[tools]\nruby = '3.4.8'\n")
+    File.write(File.join(app_root, 'mise.local.toml'), "[env]\nRAILS_ENV = 'development'\n")
+  end
+
+  def expect_app_mise_activation_before_ruby(lines)
+    expect(lines).to include("mise_trust=#{File.join(real_app_root, 'mise.toml')}")
+    expect(lines).to include("mise_trust=#{File.join(real_app_root, 'mise.local.toml')}")
+    expect(lines).to include("mise_env=-C #{real_app_root} -s bash")
+    expect(lines).to include("mise_env_ceiling=#{File.dirname(real_app_root)}")
+    expect(lines).to include("MISE_CEILING_PATHS=#{File.dirname(real_app_root)}")
+    expect(lines.index("mise_env=-C #{real_app_root} -s bash")).to be < lines.index('ruby')
+  end
+
+  it 'trusts and activates mise before the Ruby loader under a sparse PATH' do
+    install_app_mise_configs
     install_fake_mise
 
     _stdout, stderr, status = run_wt
 
     expect(status).to be_success, stderr
     lines = log_lines
-    expect(lines).to include("mise_trust=#{File.join(real_app_root, 'mise.toml')}")
-    expect(lines).to include("mise_env=-C #{real_app_root} -s bash")
-    expect(lines).to include("mise_env_ceiling=#{File.dirname(real_app_root)}")
     expect(lines).to include('ruby')
-    expect(lines.index("mise_env=-C #{real_app_root} -s bash")).to be < lines.index('ruby')
-    expect(lines.index("mise_env_ceiling=#{File.dirname(real_app_root)}")).to be < lines.index('ruby')
+    expect_app_mise_activation_before_ruby(lines)
     expect(lines).to include("BUNDLE_GEMFILE=#{File.join(real_app_root, 'Gemfile')}")
     expect(lines.grep(/ruby_args=/).first).to include('/dev/fd/3 setup --dry-run')
     expect(lines.grep(/LANG=/).first).to match(/UTF-?8/i)

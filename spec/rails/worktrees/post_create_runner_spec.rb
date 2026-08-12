@@ -64,7 +64,7 @@ RSpec.describe Rails::Worktrees::PostCreateRunner do
                    'BUNDLE_GEMFILE', 'BUNDLE_PATH', 'GEM_HOME', 'GEM_PATH',
                    'RUBY_VERSION', 'RAILS_ENV', 'NODE_ENV',
                    'XDG_STATE_HOME', 'XDG_DATA_HOME', 'XDG_CONFIG_HOME',
-                   'DEV_PORT', 'WORKTREE_DATABASE_SUFFIX')
+                   'DEV_PORT', 'WORKTREE_DATABASE_SUFFIX', 'MISE_CEILING_PATHS')
   end
 
   def popen_result(output: '', exit_status: 0)
@@ -174,6 +174,18 @@ RSpec.describe Rails::Worktrees::PostCreateRunner do
         expect(commands.first[:env]['RAILS_ENV']).to eq('production')
       ensure
         ENV['RAILS_ENV'] = original
+      end
+
+      it 'preserves the mise discovery ceiling for custom commands' do
+        original = ENV.fetch('MISE_CEILING_PATHS', nil)
+        ENV['MISE_CEILING_PATHS'] = File.dirname(target_dir)
+        commands = stub_popen2e_sequence(popen_result)
+
+        build_runner.call
+
+        expect(commands.first[:env]['MISE_CEILING_PATHS']).to eq(File.dirname(target_dir))
+      ensure
+        ENV['MISE_CEILING_PATHS'] = original
       end
     end
 
