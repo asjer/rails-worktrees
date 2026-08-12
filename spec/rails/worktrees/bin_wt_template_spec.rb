@@ -117,7 +117,7 @@ RSpec.describe 'generated bin/wt template' do
       #!/usr/bin/env bash
       case "$1" in
         trust)
-          printf 'mise_trust=%s\n' "$2" >> "$WT_LOG"
+          printf 'mise_trust=%s\n' "${2:-<current-or-parent>}" >> "$WT_LOG"
           exit 0
           ;;
         exec)
@@ -196,16 +196,18 @@ RSpec.describe 'generated bin/wt template' do
     expect(log_lines.grep(/\Amise_/)).to be_empty
   end
 
-  it 're-execs through mise without a project-local config' do
+  it 'trusts the current or parent mise config before re-execing without a project-local config' do
+    File.write(File.join(tmpdir, 'mise.toml'), "[tools]\nruby = '3.4.8'\n")
     install_fake_mise
 
     _stdout, stderr, status = run_wt
 
     expect(status).to be_success, stderr
     lines = log_lines
+    expect(lines).to include('mise_trust=<current-or-parent>')
     expect(lines).to include('mise_exec')
     expect(lines).to include('ruby')
-    expect(lines.grep(/\Amise_trust=/)).to be_empty
+    expect(lines.index('mise_trust=<current-or-parent>')).to be < lines.index('mise_exec')
     expect(lines.index('mise_exec')).to be < lines.index('ruby')
   end
 

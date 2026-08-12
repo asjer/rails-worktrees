@@ -58,6 +58,8 @@ fi
 if [ -z "${RAILS_WORKTREES_BOOTSTRAPPED:-}" ] && command -v mise >/dev/null 2>&1; then
   if [ -n "$WT_MISE_CONFIG" ]; then
     mise trust "$WT_MISE_CONFIG" >/dev/null || true
+  else
+    mise trust >/dev/null || true
   fi
   export RAILS_WORKTREES_BOOTSTRAPPED=1
   exec mise exec -- "$WT_SCRIPT_PATH" "$@"
