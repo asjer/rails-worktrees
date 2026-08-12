@@ -168,12 +168,15 @@ Use the current gem executable once to repair the app-owned wrapper. Trust the a
 
 ```bash
 # From the Rails app root
-root=$PWD
+root=$(pwd -P)
+trust_root=$(git -C "$root" rev-parse --show-toplevel 2>/dev/null || printf '%s' "$root")
+trust_root=$(cd "$trust_root" && pwd -P)
 dir=$root
 while :; do
   for config in "$dir"/mise.toml "$dir"/.mise.toml; do
     [ ! -f "$config" ] || mise trust "$config"
   done
+  [ "$dir" = "$trust_root" ] && break
   parent=$(dirname "$dir")
   [ "$parent" = "$dir" ] && break
   dir=$parent
@@ -188,7 +191,7 @@ git diff --stat
 
 Review the diff before committing. `wt update` applies every safe managed maintenance fix it finds, so the resulting commit can include `bin/wt` plus other generated installer drift such as the initializer, database configuration, Procfile, Puma config, mise config, or `bin/ob`.
 
-New installs and repaired apps use a bash bootstrap wrapper that activates mise from the app root before loading Ruby/Bundler, trusting every app-root ancestor config it finds. That covers both app-local and higher-scope mise Ruby configuration without trusting an unrelated caller directory. The wrapper also falls back to the globally installed `wt` executable for bootstrap-safe commands such as `wt setup --dry-run` when the app bundle is incomplete.
+New installs and repaired apps use a bash bootstrap wrapper that activates mise from the app root before loading Ruby/Bundler, trusting app-root ancestor configs only up to the repository root. That covers both app-local and in-repository higher-scope mise Ruby configuration without trusting an unrelated caller directory or configs above the checkout. The wrapper also falls back to the globally installed `wt` executable for bootstrap-safe commands such as `wt setup --dry-run` when the app bundle is incomplete.
 
 
 ### Interactive prompts

@@ -122,6 +122,10 @@ RSpec.describe 'generated bin/wt template' do
           ;;
         env)
           shift
+          if [ "${WT_FAKE_MISE_ENV_FAIL:-}" = "1" ]; then
+            echo mise_env_failed >> "$WT_LOG"
+            exit 7
+          fi
           printf 'printf "mise_env=%%s\\n" %q >> "$WT_LOG"\n' "$*"
           exit 0
           ;;
@@ -167,9 +171,15 @@ RSpec.describe 'generated bin/wt template' do
   end
 
   def install_ancestor_mise_configs
+    File.write(File.join(tmpdir, 'mise.toml'), "[tools]\npython = '3.12'\n")
     File.write(File.join(tmpdir, 'repo', 'mise.toml'), "[tools]\nruby = '3.4.8'\n")
     FileUtils.mkdir_p(File.join(tmpdir, 'repo', 'apps'))
     File.write(File.join(tmpdir, 'repo', 'apps', 'mise.toml'), "[tools]\nnode = '22'\n")
+  end
+
+  def initialize_parent_git_repo
+    stdout, stderr, status = Open3.capture3('git', 'init', chdir: File.join(tmpdir, 'repo'))
+    expect(status).to be_success, stdout + stderr
   end
 
   it 'trusts and activates mise before the Ruby loader under a sparse PATH' do
@@ -201,22 +211,35 @@ RSpec.describe 'generated bin/wt template' do
     expect(log_lines.grep(/\Amise_/)).to be_empty
   end
 
-  it 'trusts every ancestor mise config before activating without a project-local config' do
+  it 'trusts every repository ancestor mise config before activating without a project-local config' do
     install_ancestor_mise_configs
+    initialize_parent_git_repo
     install_fake_mise
 
     _stdout, stderr, status = run_wt
 
     expect(status).to be_success, stderr
     lines = log_lines
-    repo_config_trust = "mise_trust=#{File.join(tmpdir, 'repo', 'mise.toml')}"
-    apps_config_trust = "mise_trust=#{File.join(tmpdir, 'repo', 'apps', 'mise.toml')}"
+    repo_config_trust = "mise_trust=#{File.realpath(File.join(tmpdir, 'repo', 'mise.toml'))}"
+    apps_config_trust = "mise_trust=#{File.realpath(File.join(tmpdir, 'repo', 'apps', 'mise.toml'))}"
     mise_env_activation = "mise_env=-C #{real_app_root} -s bash"
 
     expect(lines).to include(repo_config_trust, apps_config_trust, mise_env_activation, 'ruby')
+    expect(lines).not_to include("mise_trust=#{File.realpath(File.join(tmpdir, 'mise.toml'))}")
     expect(lines.index(repo_config_trust)).to be < lines.index(mise_env_activation)
     expect(lines.index(apps_config_trust)).to be < lines.index(mise_env_activation)
     expect(lines.index(mise_env_activation)).to be < lines.index('ruby')
+  end
+
+  it 'aborts when mise environment activation fails' do
+    File.write(File.join(app_root, 'mise.toml'), "[tools]\nruby = '3.4.8'\n")
+    install_fake_mise
+
+    _stdout, _stderr, status = run_wt('WT_FAKE_MISE_ENV_FAIL' => '1')
+
+    expect(status.exitstatus).to eq(7)
+    expect(log_lines).to include('mise_env_failed')
+    expect(log_lines).not_to include('ruby')
   end
 
   it 'falls back to the Ruby loader when mise is unavailable' do

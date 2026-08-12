@@ -47,6 +47,14 @@ fi
 WT_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 WT_SCRIPT_PATH="$WT_SCRIPT_DIR/$(basename "${BASH_SOURCE[0]}")"
 WT_APP_ROOT="$(cd "$WT_SCRIPT_DIR/.." && pwd -P)"
+WT_MISE_TRUST_ROOT="$WT_APP_ROOT"
+if command -v git >/dev/null 2>&1; then
+  WT_GIT_ROOT="$(git -C "$WT_APP_ROOT" rev-parse --show-toplevel 2>/dev/null || true)"
+  if [ -n "$WT_GIT_ROOT" ]; then
+    WT_MISE_TRUST_ROOT="$(cd "$WT_GIT_ROOT" && pwd -P)"
+  fi
+fi
+
 wt_trust_mise_config_hierarchy() {
   local dir config parent
   dir="$WT_APP_ROOT"
@@ -56,6 +64,7 @@ wt_trust_mise_config_hierarchy() {
       [ -f "$config" ] && mise trust "$config" >/dev/null || true
     done
 
+    [ "$dir" = "$WT_MISE_TRUST_ROOT" ] && break
     parent="$(dirname "$dir")"
     [ "$parent" = "$dir" ] && break
     dir="$parent"
@@ -64,7 +73,8 @@ wt_trust_mise_config_hierarchy() {
 
 if [ -z "${RAILS_WORKTREES_BOOTSTRAPPED:-}" ] && command -v mise >/dev/null 2>&1; then
   wt_trust_mise_config_hierarchy
-  eval "$(mise env -C "$WT_APP_ROOT" -s bash)"
+  WT_MISE_ENV="$(mise env -C "$WT_APP_ROOT" -s bash)" || exit $?
+  eval "$WT_MISE_ENV"
   export RAILS_WORKTREES_BOOTSTRAPPED=1
   exec "$WT_SCRIPT_PATH" "$@"
 fi
