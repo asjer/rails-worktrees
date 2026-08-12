@@ -171,6 +171,8 @@ Use the current gem executable once to repair the app-owned wrapper. Trust the a
 root=$(pwd -P)
 trust_root=$(git -C "$root" rev-parse --show-toplevel 2>/dev/null || printf '%s' "$root")
 trust_root=$(cd "$trust_root" && pwd -P)
+MISE_CEILING_PATHS=$(dirname "$trust_root")
+export MISE_CEILING_PATHS
 dir=$root
 while :; do
   for config in "$dir"/mise.toml "$dir"/.mise.toml; do

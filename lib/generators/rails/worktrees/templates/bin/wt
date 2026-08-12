@@ -54,6 +54,7 @@ if command -v git >/dev/null 2>&1; then
     WT_MISE_TRUST_ROOT="$(cd "$WT_GIT_ROOT" && pwd -P)"
   fi
 fi
+WT_MISE_CEILING_PATH="$(dirname "$WT_MISE_TRUST_ROOT")"
 
 wt_trust_mise_config_hierarchy() {
   local dir config parent
@@ -73,7 +74,7 @@ wt_trust_mise_config_hierarchy() {
 
 if [ -z "${RAILS_WORKTREES_BOOTSTRAPPED:-}" ] && command -v mise >/dev/null 2>&1; then
   wt_trust_mise_config_hierarchy
-  WT_MISE_ENV="$(mise env -C "$WT_APP_ROOT" -s bash)" || exit $?
+  WT_MISE_ENV="$(MISE_CEILING_PATHS="$WT_MISE_CEILING_PATH" mise env -C "$WT_APP_ROOT" -s bash)" || exit $?
   eval "$WT_MISE_ENV"
   export RAILS_WORKTREES_BOOTSTRAPPED=1
   exec "$WT_SCRIPT_PATH" "$@"

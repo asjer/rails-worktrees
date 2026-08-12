@@ -127,6 +127,7 @@ RSpec.describe 'generated bin/wt template' do
             exit 7
           fi
           printf 'printf "mise_env=%%s\\n" %q >> "$WT_LOG"\n' "$*"
+          printf 'printf "mise_env_ceiling=%%s\\n" %q >> "$WT_LOG"\n' "${MISE_CEILING_PATHS:-}"
           exit 0
           ;;
         *)
@@ -192,8 +193,10 @@ RSpec.describe 'generated bin/wt template' do
     lines = log_lines
     expect(lines).to include("mise_trust=#{File.join(real_app_root, 'mise.toml')}")
     expect(lines).to include("mise_env=-C #{real_app_root} -s bash")
+    expect(lines).to include("mise_env_ceiling=#{File.dirname(real_app_root)}")
     expect(lines).to include('ruby')
     expect(lines.index("mise_env=-C #{real_app_root} -s bash")).to be < lines.index('ruby')
+    expect(lines.index("mise_env_ceiling=#{File.dirname(real_app_root)}")).to be < lines.index('ruby')
     expect(lines).to include("BUNDLE_GEMFILE=#{File.join(real_app_root, 'Gemfile')}")
     expect(lines.grep(/ruby_args=/).first).to include('/dev/fd/3 setup --dry-run')
     expect(lines.grep(/LANG=/).first).to match(/UTF-?8/i)
@@ -226,6 +229,7 @@ RSpec.describe 'generated bin/wt template' do
 
     expect(lines).to include(repo_config_trust, apps_config_trust, mise_env_activation, 'ruby')
     expect(lines).not_to include("mise_trust=#{File.realpath(File.join(tmpdir, 'mise.toml'))}")
+    expect(lines).to include("mise_env_ceiling=#{File.realpath(tmpdir)}")
     expect(lines.index(repo_config_trust)).to be < lines.index(mise_env_activation)
     expect(lines.index(apps_config_trust)).to be < lines.index(mise_env_activation)
     expect(lines.index(mise_env_activation)).to be < lines.index('ruby')
