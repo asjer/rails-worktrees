@@ -64,8 +64,14 @@ RSpec.describe Rails::Worktrees::PostCreateRunner do
                    'BUNDLE_GEMFILE', 'BUNDLE_PATH', 'GEM_HOME', 'GEM_PATH',
                    'RUBY_VERSION', 'RAILS_ENV', 'NODE_ENV',
                    'XDG_STATE_HOME', 'XDG_DATA_HOME', 'XDG_CONFIG_HOME',
-                   'DEV_PORT', 'WORKTREE_DATABASE_SUFFIX',
-                   'MISE_CEILING_PATHS', 'MISE_TRUSTED_CONFIG_PATHS')
+                   'DEV_PORT', 'WORKTREE_DATABASE_SUFFIX').merge(target_mise_scope_env)
+  end
+
+  def target_mise_scope_env
+    {
+      'MISE_CEILING_PATHS' => File.dirname(target_dir),
+      'MISE_TRUSTED_CONFIG_PATHS' => target_dir
+    }
   end
 
   def popen_result(output: '', exit_status: 0)
@@ -177,17 +183,16 @@ RSpec.describe Rails::Worktrees::PostCreateRunner do
         ENV['RAILS_ENV'] = original
       end
 
-      it 'preserves the mise trust scope for custom commands' do
+      it 'derives the mise trust scope from the target directory for custom commands' do
         original_ceiling = ENV.fetch('MISE_CEILING_PATHS', nil)
         original_trusted = ENV.fetch('MISE_TRUSTED_CONFIG_PATHS', nil)
-        ENV['MISE_CEILING_PATHS'] = File.dirname(target_dir)
-        ENV['MISE_TRUSTED_CONFIG_PATHS'] = target_dir
+        ENV['MISE_CEILING_PATHS'] = File.join(tmpdir, 'source-parent')
+        ENV['MISE_TRUSTED_CONFIG_PATHS'] = File.join(tmpdir, 'source')
         commands = stub_popen2e_sequence(popen_result)
 
         build_runner.call
 
-        expect(commands.first[:env]['MISE_CEILING_PATHS']).to eq(File.dirname(target_dir))
-        expect(commands.first[:env]['MISE_TRUSTED_CONFIG_PATHS']).to eq(target_dir)
+        expect(commands.first[:env]).to include(target_mise_scope_env)
       ensure
         ENV['MISE_CEILING_PATHS'] = original_ceiling
         ENV['MISE_TRUSTED_CONFIG_PATHS'] = original_trusted
@@ -255,6 +260,21 @@ RSpec.describe Rails::Worktrees::PostCreateRunner do
         expect(Rails::Worktrees::MiseEnvironment).to have_received(:new).with(
           target_dir: target_dir,
           env: runner_env.merge(env_values)
+        )
+      end
+
+      it 'replaces source worktree mise scope with target worktree scope' do
+        File.write(File.join(tmpdir, 'mise.toml'), "[tools]\nruby = '3.4.8'\n")
+        source_scope = {
+          'MISE_CEILING_PATHS' => File.join(tmpdir, 'source-parent'),
+          'MISE_TRUSTED_CONFIG_PATHS' => File.join(tmpdir, 'source')
+        }
+
+        build_runner(bootstrapped_env: source_scope).call
+
+        expect(Rails::Worktrees::MiseEnvironment).to have_received(:new).with(
+          target_dir: target_dir,
+          env: runner_env
         )
       end
 
