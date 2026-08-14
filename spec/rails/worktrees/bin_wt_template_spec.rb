@@ -18,7 +18,7 @@ RSpec.describe 'generated bin/wt template' do
     FileUtils.rm_rf(tmpdir)
   end
 
-  def app_root = File.join(tmpdir, 'app')
+  def app_root = File.join(tmpdir, 'repo', 'apps', 'app')
   def home = File.join(tmpdir, 'home')
   def local_bin = File.join(home, '.local', 'bin')
   def log_path = File.join(tmpdir, 'bootstrap.log')
@@ -53,6 +53,8 @@ RSpec.describe 'generated bin/wt template' do
         echo ruby
         printf 'ruby_args=%s\n' "$*"
         printf 'BUNDLE_GEMFILE=%s\n' "${BUNDLE_GEMFILE:-}"
+        printf 'MISE_CEILING_PATHS=%s\n' "${MISE_CEILING_PATHS:-}"
+        printf 'MISE_TRUSTED_CONFIG_PATHS=%s\n' "${MISE_TRUSTED_CONFIG_PATHS:-}"
         printf 'LANG=%s\n' "${LANG:-}"
         printf 'LC_ALL=%s\n' "${LC_ALL:-}"
       } >> "$WT_LOG"
@@ -117,12 +119,19 @@ RSpec.describe 'generated bin/wt template' do
       #!/usr/bin/env bash
       case "$1" in
         trust)
-          printf 'mise_trust=%s\n' "$2" >> "$WT_LOG"
+          printf 'mise_trust=%s\n' "${2:-<current-or-parent>}" >> "$WT_LOG"
           exit 0
           ;;
         exec)
-          echo mise_exec >> "$WT_LOG"
           shift
+          if [ "${WT_FAKE_MISE_EXEC_FAIL:-}" = "1" ]; then
+            echo mise_exec_failed >> "$WT_LOG"
+            exit 7
+          fi
+          printf 'mise_exec=%s\n' "$*" >> "$WT_LOG"
+          printf 'mise_exec_ceiling=%s\n' "${MISE_CEILING_PATHS:-}" >> "$WT_LOG"
+          printf 'mise_exec_trusted=%s\n' "${MISE_TRUSTED_CONFIG_PATHS:-}" >> "$WT_LOG"
+          [ "${1:-}" = "-C" ] && shift 2
           [ "${1:-}" = "--" ] && shift
           exec "$@"
           ;;
@@ -167,18 +176,42 @@ RSpec.describe 'generated bin/wt template' do
     log_lines.grep(/\A#{Regexp.escape(name)}=/).first&.delete_prefix("#{name}=")
   end
 
-  it 'trusts and re-execs through mise before the Ruby loader under a sparse PATH' do
+  def install_ancestor_mise_configs
+    File.write(File.join(tmpdir, 'mise.toml'), "[tools]\npython = '3.12'\n")
+    File.write(File.join(tmpdir, 'repo', 'mise.toml'), "[tools]\nruby = '3.4.8'\n")
+    FileUtils.mkdir_p(File.join(tmpdir, 'repo', 'apps'))
+    File.write(File.join(tmpdir, 'repo', 'apps', 'mise.toml'), "[tools]\nnode = '22'\n")
+  end
+
+  def initialize_parent_git_repo
+    stdout, stderr, status = Open3.capture3('git', 'init', chdir: File.join(tmpdir, 'repo'))
+    expect(status).to be_success, stdout + stderr
+  end
+
+  def install_app_mise_configs
     File.write(File.join(app_root, 'mise.toml'), "[tools]\nruby = '3.4.8'\n")
+    File.write(File.join(app_root, 'mise.local.toml'), "[env]\nRAILS_ENV = 'development'\n")
+  end
+
+  def expect_app_mise_activation_before_ruby(lines)
+    expect(lines).to include("mise_exec=-C #{real_app_root} -- #{wt_path} setup --dry-run")
+    expect(lines).to include("mise_exec_ceiling=#{File.dirname(real_app_root)}")
+    expect(lines).to include("mise_exec_trusted=#{real_app_root}")
+    expect(lines).to include("MISE_CEILING_PATHS=#{File.dirname(real_app_root)}")
+    expect(lines).to include("MISE_TRUSTED_CONFIG_PATHS=#{real_app_root}")
+    expect(lines.index("mise_exec=-C #{real_app_root} -- #{wt_path} setup --dry-run")).to be < lines.index('ruby')
+  end
+
+  it 'scopes mise trust and activates before the Ruby loader under a sparse PATH' do
+    install_app_mise_configs
     install_fake_mise
 
     _stdout, stderr, status = run_wt
 
     expect(status).to be_success, stderr
     lines = log_lines
-    expect(lines).to include("mise_trust=#{File.join(real_app_root, 'mise.toml')}")
-    expect(lines).to include('mise_exec')
     expect(lines).to include('ruby')
-    expect(lines.index('mise_exec')).to be < lines.index('ruby')
+    expect_app_mise_activation_before_ruby(lines)
     expect(lines).to include("BUNDLE_GEMFILE=#{File.join(real_app_root, 'Gemfile')}")
     expect(lines.grep(/ruby_args=/).first).to include('/dev/fd/3 setup --dry-run')
     expect(lines.grep(/LANG=/).first).to match(/UTF-?8/i)
@@ -194,6 +227,48 @@ RSpec.describe 'generated bin/wt template' do
     expect(status).to be_success, stderr
     expect(log_lines).to include('ruby')
     expect(log_lines.grep(/\Amise_/)).to be_empty
+  end
+
+  it 'scopes mise discovery and trust to the repository root' do
+    install_ancestor_mise_configs
+    initialize_parent_git_repo
+    install_fake_mise
+
+    _stdout, stderr, status = run_wt
+
+    expect(status).to be_success, stderr
+    lines = log_lines
+    mise_activation = "mise_exec=-C #{real_app_root} -- #{wt_path} setup --dry-run"
+
+    expect(lines).to include(mise_activation, "mise_exec_ceiling=#{File.realpath(tmpdir)}")
+    expect(lines).to include("mise_exec_trusted=#{File.realpath(File.join(tmpdir, 'repo'))}", 'ruby')
+    expect(lines.index(mise_activation)).to be < lines.index('ruby')
+  end
+
+  it 'ignores inherited Git repository selectors when finding the trust root' do
+    install_ancestor_mise_configs
+    initialize_parent_git_repo
+    install_fake_mise
+    other_repo = File.join(tmpdir, 'other')
+    FileUtils.mkdir_p(other_repo)
+    stdout, stderr, status = Open3.capture3('git', 'init', chdir: other_repo)
+    expect(status).to be_success, stdout + stderr
+
+    _stdout, run_stderr, run_status = run_wt('GIT_DIR' => File.join(other_repo, '.git'), 'GIT_WORK_TREE' => other_repo)
+
+    expect(run_status).to be_success, run_stderr
+    expect(log_lines).to include("mise_exec_trusted=#{File.realpath(File.join(tmpdir, 'repo'))}")
+  end
+
+  it 'aborts when mise execution fails' do
+    File.write(File.join(app_root, 'mise.toml'), "[tools]\nruby = '3.4.8'\n")
+    install_fake_mise
+
+    _stdout, _stderr, status = run_wt('WT_FAKE_MISE_EXEC_FAIL' => '1')
+
+    expect(status.exitstatus).to eq(7)
+    expect(log_lines).to include('mise_exec_failed')
+    expect(log_lines).not_to include('ruby')
   end
 
   it 'falls back to the Ruby loader when mise is unavailable' do

@@ -164,16 +164,64 @@ module Rails
       attr_reader :runtime_env
 
       def resolved_runtime_env(dry_run:)
-        env = shell_env.merge(@bootstrapped_env)
+        env = shell_env.merge(@bootstrapped_env).merge(target_mise_scope_env)
         return env if dry_run
 
-        env.merge(toolchain_env)
+        env.merge(toolchain_env(env))
       end
 
-      def toolchain_env
-        result = MiseEnvironment.new(target_dir: @target_dir, env: shell_env.merge(@bootstrapped_env)).call
+      def toolchain_env(env)
+        result = MiseEnvironment.new(target_dir: @target_dir, env: env).call
         result.messages.each { |message| info(message) }
         result.env
+      end
+
+      def target_mise_scope_env
+        trust_root = target_git_root || canonical_target_dir
+
+        {
+          'MISE_CEILING_PATHS' => File.dirname(trust_root),
+          'MISE_TRUSTED_CONFIG_PATHS' => trust_root
+        }
+      end
+
+      def target_git_root
+        stdout_str, status = capture_target_git_root
+        return nil unless status.success?
+
+        root = File.realpath(stdout_str.strip)
+        target_within_root?(root) ? root : nil
+      rescue Errno::ENOENT, Errno::ENOTDIR
+        nil
+      end
+
+      def capture_target_git_root
+        stdout_str, _stderr_str, status = Open3.capture3(
+          git_discovery_env,
+          'git', '-C', @target_dir, 'rev-parse', '--show-toplevel'
+        )
+        [stdout_str, status]
+      end
+
+      def git_discovery_env
+        shell_env.merge(
+          'GIT_DIR' => nil,
+          'GIT_WORK_TREE' => nil,
+          'GIT_COMMON_DIR' => nil,
+          'GIT_INDEX_FILE' => nil,
+          'GIT_OBJECT_DIRECTORY' => nil,
+          'GIT_ALTERNATE_OBJECT_DIRECTORIES' => nil
+        )
+      end
+
+      def target_within_root?(root)
+        canonical_target_dir.start_with?("#{root}#{File::SEPARATOR}") || canonical_target_dir == root
+      end
+
+      def canonical_target_dir
+        @canonical_target_dir ||= File.realpath(@target_dir)
+      rescue Errno::ENOENT
+        File.expand_path(@target_dir)
       end
 
       def yarn_lock_present?

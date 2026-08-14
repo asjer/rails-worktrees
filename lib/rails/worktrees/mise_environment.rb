@@ -7,7 +7,7 @@ module Rails
     class MiseEnvironment
       Result = Struct.new(:env, :messages)
 
-      CONFIG_FILES = %w[mise.toml .mise.toml].freeze
+      CONFIG_FILES = %w[mise.toml .mise.toml mise.local.toml .mise.local.toml].freeze
 
       def initialize(target_dir:, env:)
         @target_dir = target_dir
