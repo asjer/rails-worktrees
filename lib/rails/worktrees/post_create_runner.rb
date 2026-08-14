@@ -197,10 +197,21 @@ module Rails
 
       def capture_target_git_root
         stdout_str, _stderr_str, status = Open3.capture3(
-          shell_env,
+          git_discovery_env,
           'git', '-C', @target_dir, 'rev-parse', '--show-toplevel'
         )
         [stdout_str, status]
+      end
+
+      def git_discovery_env
+        shell_env.merge(
+          'GIT_DIR' => nil,
+          'GIT_WORK_TREE' => nil,
+          'GIT_COMMON_DIR' => nil,
+          'GIT_INDEX_FILE' => nil,
+          'GIT_OBJECT_DIRECTORY' => nil,
+          'GIT_ALTERNATE_OBJECT_DIRECTORIES' => nil
+        )
       end
 
       def target_within_root?(root)

@@ -197,6 +197,18 @@ RSpec.describe Rails::Worktrees::PostCreateRunner do
         ENV['MISE_CEILING_PATHS'] = original_ceiling
         ENV['MISE_TRUSTED_CONFIG_PATHS'] = original_trusted
       end
+
+      it 'clears inherited Git selectors when deriving the target mise scope' do
+        allow(Open3).to receive(:capture3).and_call_original
+        stub_popen2e_sequence(popen_result)
+
+        build_runner.call
+
+        expect(Open3).to have_received(:capture3).with(
+          hash_including('GIT_DIR' => nil, 'GIT_WORK_TREE' => nil, 'GIT_COMMON_DIR' => nil),
+          'git', '-C', target_dir, 'rev-parse', '--show-toplevel'
+        )
+      end
     end
 
     context 'with a custom post_create_command in dry run' do

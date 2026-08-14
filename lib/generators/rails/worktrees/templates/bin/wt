@@ -68,10 +68,8 @@ WT_MISE_CEILING_PATH="$(dirname "$WT_MISE_TRUST_ROOT")"
 if [ -z "${RAILS_WORKTREES_BOOTSTRAPPED:-}" ] && command -v mise >/dev/null 2>&1; then
   export MISE_CEILING_PATHS="$WT_MISE_CEILING_PATH"
   export MISE_TRUSTED_CONFIG_PATHS="$WT_MISE_TRUST_ROOT"
-  WT_MISE_ENV="$(mise env -C "$WT_APP_ROOT" -s bash)" || exit $?
-  eval "$WT_MISE_ENV"
   export RAILS_WORKTREES_BOOTSTRAPPED=1
-  exec "$WT_SCRIPT_PATH" "$@"
+  exec mise exec -C "$WT_APP_ROOT" -- "$WT_SCRIPT_PATH" "$@"
 fi
 
 export BUNDLE_GEMFILE="${BUNDLE_GEMFILE:-$WT_APP_ROOT/Gemfile}"

@@ -122,16 +122,18 @@ RSpec.describe 'generated bin/wt template' do
           printf 'mise_trust=%s\n' "${2:-<current-or-parent>}" >> "$WT_LOG"
           exit 0
           ;;
-        env)
+        exec)
           shift
-          if [ "${WT_FAKE_MISE_ENV_FAIL:-}" = "1" ]; then
-            echo mise_env_failed >> "$WT_LOG"
+          if [ "${WT_FAKE_MISE_EXEC_FAIL:-}" = "1" ]; then
+            echo mise_exec_failed >> "$WT_LOG"
             exit 7
           fi
-          printf 'printf "mise_env=%%s\\n" %q >> "$WT_LOG"\n' "$*"
-          printf 'printf "mise_env_ceiling=%%s\\n" %q >> "$WT_LOG"\n' "${MISE_CEILING_PATHS:-}"
-          printf 'printf "mise_env_trusted=%%s\\n" %q >> "$WT_LOG"\n' "${MISE_TRUSTED_CONFIG_PATHS:-}"
-          exit 0
+          printf 'mise_exec=%s\n' "$*" >> "$WT_LOG"
+          printf 'mise_exec_ceiling=%s\n' "${MISE_CEILING_PATHS:-}" >> "$WT_LOG"
+          printf 'mise_exec_trusted=%s\n' "${MISE_TRUSTED_CONFIG_PATHS:-}" >> "$WT_LOG"
+          [ "${1:-}" = "-C" ] && shift 2
+          [ "${1:-}" = "--" ] && shift
+          exec "$@"
           ;;
         *)
           printf 'mise_unexpected=%s\n' "$*" >> "$WT_LOG"
@@ -192,12 +194,12 @@ RSpec.describe 'generated bin/wt template' do
   end
 
   def expect_app_mise_activation_before_ruby(lines)
-    expect(lines).to include("mise_env=-C #{real_app_root} -s bash")
-    expect(lines).to include("mise_env_ceiling=#{File.dirname(real_app_root)}")
-    expect(lines).to include("mise_env_trusted=#{real_app_root}")
+    expect(lines).to include("mise_exec=-C #{real_app_root} -- #{wt_path} setup --dry-run")
+    expect(lines).to include("mise_exec_ceiling=#{File.dirname(real_app_root)}")
+    expect(lines).to include("mise_exec_trusted=#{real_app_root}")
     expect(lines).to include("MISE_CEILING_PATHS=#{File.dirname(real_app_root)}")
     expect(lines).to include("MISE_TRUSTED_CONFIG_PATHS=#{real_app_root}")
-    expect(lines.index("mise_env=-C #{real_app_root} -s bash")).to be < lines.index('ruby')
+    expect(lines.index("mise_exec=-C #{real_app_root} -- #{wt_path} setup --dry-run")).to be < lines.index('ruby')
   end
 
   it 'scopes mise trust and activates before the Ruby loader under a sparse PATH' do
@@ -236,11 +238,11 @@ RSpec.describe 'generated bin/wt template' do
 
     expect(status).to be_success, stderr
     lines = log_lines
-    mise_env_activation = "mise_env=-C #{real_app_root} -s bash"
+    mise_activation = "mise_exec=-C #{real_app_root} -- #{wt_path} setup --dry-run"
 
-    expect(lines).to include(mise_env_activation, "mise_env_ceiling=#{File.realpath(tmpdir)}")
-    expect(lines).to include("mise_env_trusted=#{File.realpath(File.join(tmpdir, 'repo'))}", 'ruby')
-    expect(lines.index(mise_env_activation)).to be < lines.index('ruby')
+    expect(lines).to include(mise_activation, "mise_exec_ceiling=#{File.realpath(tmpdir)}")
+    expect(lines).to include("mise_exec_trusted=#{File.realpath(File.join(tmpdir, 'repo'))}", 'ruby')
+    expect(lines.index(mise_activation)).to be < lines.index('ruby')
   end
 
   it 'ignores inherited Git repository selectors when finding the trust root' do
@@ -255,17 +257,17 @@ RSpec.describe 'generated bin/wt template' do
     _stdout, run_stderr, run_status = run_wt('GIT_DIR' => File.join(other_repo, '.git'), 'GIT_WORK_TREE' => other_repo)
 
     expect(run_status).to be_success, run_stderr
-    expect(log_lines).to include("mise_env_trusted=#{File.realpath(File.join(tmpdir, 'repo'))}")
+    expect(log_lines).to include("mise_exec_trusted=#{File.realpath(File.join(tmpdir, 'repo'))}")
   end
 
-  it 'aborts when mise environment activation fails' do
+  it 'aborts when mise execution fails' do
     File.write(File.join(app_root, 'mise.toml'), "[tools]\nruby = '3.4.8'\n")
     install_fake_mise
 
-    _stdout, _stderr, status = run_wt('WT_FAKE_MISE_ENV_FAIL' => '1')
+    _stdout, _stderr, status = run_wt('WT_FAKE_MISE_EXEC_FAIL' => '1')
 
     expect(status.exitstatus).to eq(7)
-    expect(log_lines).to include('mise_env_failed')
+    expect(log_lines).to include('mise_exec_failed')
     expect(log_lines).not_to include('ruby')
   end
 

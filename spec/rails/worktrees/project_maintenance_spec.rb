@@ -121,6 +121,6 @@ RSpec.describe Rails::Worktrees::ProjectMaintenance do
     expect(bin_wt).to be_fixable
     expect(bin_wt.updated_content).to eq(managed_wt_template)
     expect(bin_wt.updated_content).to start_with('#!/usr/bin/env bash')
-    expect(bin_wt.updated_content).to include('mise env -C "$WT_APP_ROOT" -s bash')
+    expect(bin_wt.updated_content).to include('mise exec -C "$WT_APP_ROOT" -- "$WT_SCRIPT_PATH"')
   end
 end
