@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.4](https://github.com/asjer/rails-worktrees/compare/v0.7.3...v0.7.4) (2026-08-15)
+
+
+### Bug Fixes
+
+* **wt:** bootstrap Ruby through mise for legacy wrappers ([#45](https://github.com/asjer/rails-worktrees/issues/45)) ([b3326ab](https://github.com/asjer/rails-worktrees/commit/b3326ab737fb814d826a1b4870433028a455f582))
+
 ## [0.7.3](https://github.com/asjer/rails-worktrees/compare/v0.7.2...v0.7.3) (2026-07-08)
 
 
