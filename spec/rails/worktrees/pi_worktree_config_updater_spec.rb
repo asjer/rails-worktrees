@@ -111,6 +111,15 @@ RSpec.describe Rails::Worktrees::PiWorktreeConfigUpdater do
       expect(result.messages.first).to include('.pi/worktree.json is not valid JSON')
     end
 
+    it 'refuses to rewrite content that is not valid UTF-8' do
+      content = (+"{\"postCreate\": [\"\xFF\"]}").force_encoding(Encoding::UTF_8)
+      result = patch(content)
+
+      expect(result.status).to eq(:conflict)
+      expect(result.messages.first).to include('.pi/worktree.json is not valid UTF-8')
+      expect(described_class.configured?(content)).to be(false)
+    end
+
     it 'refuses to rewrite a non-object document' do
       result = patch('["bin/wt setup"]')
 

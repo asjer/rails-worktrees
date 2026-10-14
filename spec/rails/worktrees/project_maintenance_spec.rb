@@ -146,6 +146,28 @@ RSpec.describe Rails::Worktrees::ProjectMaintenance do
       expect(pi_check).not_to be_updatable
     end
 
+    it 'warns instead of auditing a symlinked config' do
+      target = File.join(tmpdir, 'shared-worktree.json')
+      File.write(target, %({"linkEnvFiles": false, "postCreate": ["bin/wt setup"]}\n))
+      FileUtils.mkdir_p(File.join(tmpdir, '.pi'))
+      File.symlink(target, File.join(tmpdir, '.pi/worktree.json'))
+
+      pi_check = check(described_class.new(root: tmpdir).call, :pi_worktree)
+
+      expect(pi_check).to be_warning
+      expect(pi_check.messages.join).to include('.pi/worktree.json is a symlink')
+      expect(pi_check).not_to be_updatable
+    end
+
+    it 'warns when explicitly requested but .pi is not a directory' do
+      write_file('.pi', 'not a directory')
+
+      pi_check = check(described_class.new(root: tmpdir, pi_worktree: true).call, :pi_worktree)
+
+      expect(pi_check).to be_warning
+      expect(pi_check.messages.join).to include('.pi is not a directory')
+    end
+
     it 'keeps auditing a config that already contains the setup hook' do
       write_file('.pi/worktree.json', %({"linkEnvFiles": false, "postCreate": ["bin/wt setup"]}\n))
 

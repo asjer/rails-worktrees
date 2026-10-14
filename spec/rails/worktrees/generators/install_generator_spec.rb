@@ -389,6 +389,15 @@ RSpec.describe Worktrees::Generators::InstallGenerator do
       expect(output).to include('.pi/worktree.json is not a regular file')
     end
 
+    it 'reports a conflict when .pi is a regular file' do
+      File.write(File.join(tmpdir, '.pi'), 'not a directory')
+
+      output = capture_generator_output('--pi')
+
+      expect(File.read(File.join(tmpdir, '.pi'))).to eq('not a directory')
+      expect(output).to include('.pi/worktree.json cannot be created because .pi is not a directory')
+    end
+
     it 'mentions that the pi-worktree extension is required' do
       output = capture_generator_output('--pi')
 

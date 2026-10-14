@@ -281,9 +281,10 @@ module Rails
           fixable_headline: "#{relative_path} can be updated automatically.",
           warning_headline: "#{relative_path} needs manual review."
         }
-        if File.exist?(path) && !File.file?(path)
+        path_conflict = PiWorktreeConfigPath.conflict(root)
+        if path_conflict
           return warning_check(config, config.fetch(:warning_headline),
-                               ["#{relative_path} is not a regular file; leaving it unchanged."])
+                               ["#{relative_path} #{path_conflict}; leaving it unchanged."])
         end
 
         updater_result_check(config, PiWorktreeConfigUpdater.new(content: content).call)

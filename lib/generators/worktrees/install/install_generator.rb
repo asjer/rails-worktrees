@@ -107,7 +107,7 @@ module Worktrees
         return unless options[:pi]
 
         path = pi_worktree_config_path
-        unsafe_reason = unsafe_pi_worktree_config_reason(path)
+        unsafe_reason = ::Rails::Worktrees::PiWorktreeConfigPath.conflict(destination_root)
         return announce_unsafe_pi_worktree_config(unsafe_reason) if unsafe_reason
 
         result = ::Rails::Worktrees::PiWorktreeConfigUpdater.new(
@@ -158,22 +158,6 @@ module Worktrees
       def write_pi_worktree_config(path, content)
         FileUtils.mkdir_p(File.dirname(path))
         File.write(path, content)
-      end
-
-      def unsafe_pi_worktree_config_reason(path)
-        return 'is a symlink' if File.symlink?(path)
-        return 'is not a regular file' if File.exist?(path) && !File.file?(path)
-
-        root = File.realpath(destination_root)
-        parent = existing_parent_realpath(File.dirname(path))
-        return if parent == root || parent.start_with?("#{root}#{File::SEPARATOR}")
-
-        'resolves outside the app through a symlinked directory'
-      end
-
-      def existing_parent_realpath(path)
-        path = File.dirname(path) until File.exist?(path)
-        File.realpath(path)
       end
 
       def announce_unsafe_pi_worktree_config(reason)

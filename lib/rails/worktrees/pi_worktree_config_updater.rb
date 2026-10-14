@@ -1,4 +1,5 @@
 require 'json'
+require_relative 'pi_worktree_config_path'
 
 module Rails
   module Worktrees
@@ -10,13 +11,13 @@ module Rails
         end
       end
 
-      RELATIVE_PATH = '.pi/worktree.json'.freeze
+      RELATIVE_PATH = PiWorktreeConfigPath::RELATIVE_PATH
       SETUP_COMMAND = 'bin/wt setup'.freeze
       # Horizontal whitespace only: a newline would make the shell run two separate commands.
       SETUP_COMMAND_PATTERN = %r{\A[ \t]*(?:\./)?bin/wt[ \t]+setup[ \t]*\z}
 
       def self.configured?(content)
-        return false if content.nil?
+        return false if content.nil? || !content.valid_encoding?
 
         config = JSON.parse(content)
         config.is_a?(Hash) && setup_hook?(config['postCreate'])
@@ -47,7 +48,11 @@ module Rails
       private
 
       def parse_config
-        return {} if @content.nil? || @content.strip.empty?
+        return {} if @content.nil?
+        unless @content.valid_encoding?
+          return conflict_result("#{RELATIVE_PATH} is not valid UTF-8; leaving it unchanged.")
+        end
+        return {} if @content.strip.empty?
 
         config = JSON.parse(@content)
         return config if config.is_a?(Hash)
