@@ -270,7 +270,7 @@ module Rails
       def pi_worktree_check
         relative_path = PiWorktreeConfigUpdater::RELATIVE_PATH
         path = absolute_path(relative_path)
-        content = File.exist?(path) ? read_text(path) : nil
+        content = File.file?(path) ? read_text(path) : nil
         return unless pi_worktree || PiWorktreeConfigUpdater.configured?(content)
 
         config = {
@@ -281,6 +281,10 @@ module Rails
           fixable_headline: "#{relative_path} can be updated automatically.",
           warning_headline: "#{relative_path} needs manual review."
         }
+        if File.exist?(path) && !File.file?(path)
+          return warning_check(config, config.fetch(:warning_headline),
+                               ["#{relative_path} is not a regular file; leaving it unchanged."])
+        end
 
         updater_result_check(config, PiWorktreeConfigUpdater.new(content: content).call)
       end

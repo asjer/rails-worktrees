@@ -380,6 +380,15 @@ RSpec.describe Worktrees::Generators::InstallGenerator do
       FileUtils.rm_rf(outside_dir)
     end
 
+    it 'leaves a non-regular .pi/worktree.json path untouched' do
+      FileUtils.mkdir_p(File.join(pi_config_path, 'nested'))
+
+      output = capture_generator_output('--pi')
+
+      expect(File.directory?(pi_config_path)).to be(true)
+      expect(output).to include('.pi/worktree.json is not a regular file')
+    end
+
     it 'mentions that the pi-worktree extension is required' do
       output = capture_generator_output('--pi')
 

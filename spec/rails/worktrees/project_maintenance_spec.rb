@@ -135,6 +135,17 @@ RSpec.describe Rails::Worktrees::ProjectMaintenance do
         .to eq('postCreate' => ['npm install', 'bin/wt setup'], 'linkEnvFiles' => false)
     end
 
+    it 'warns instead of failing when .pi/worktree.json is not a regular file' do
+      FileUtils.mkdir_p(File.join(tmpdir, '.pi/worktree.json'))
+
+      expect(check(described_class.new(root: tmpdir).call, :pi_worktree)).to be_nil
+
+      pi_check = check(described_class.new(root: tmpdir, pi_worktree: true).call, :pi_worktree)
+      expect(pi_check).to be_warning
+      expect(pi_check.messages.join).to include('.pi/worktree.json is not a regular file')
+      expect(pi_check).not_to be_updatable
+    end
+
     it 'keeps auditing a config that already contains the setup hook' do
       write_file('.pi/worktree.json', %({"linkEnvFiles": false, "postCreate": ["bin/wt setup"]}\n))
 

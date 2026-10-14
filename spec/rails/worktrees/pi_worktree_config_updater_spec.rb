@@ -75,6 +75,13 @@ RSpec.describe Rails::Worktrees::PiWorktreeConfigUpdater do
       expect(described_class.configured?(%({"postCreate": ["bin/wt setup --dry-run"]}))).to be(false)
     end
 
+    it 'does not treat a newline-separated hook as the setup command' do
+      result = patch(JSON.generate('linkEnvFiles' => false, 'postCreate' => ["bin/wt\nsetup"]))
+
+      expect(result.status).to eq(:updated)
+      expect(parsed(result)['postCreate']).to eq(["bin/wt\nsetup", 'bin/wt setup'])
+    end
+
     it 'only disables env-file linking when the hook already exists' do
       result = patch(%({"postCreate": ["bin/wt setup"]}))
 

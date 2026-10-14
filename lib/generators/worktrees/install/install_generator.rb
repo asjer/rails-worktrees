@@ -162,6 +162,7 @@ module Worktrees
 
       def unsafe_pi_worktree_config_reason(path)
         return 'is a symlink' if File.symlink?(path)
+        return 'is not a regular file' if File.exist?(path) && !File.file?(path)
 
         root = File.realpath(destination_root)
         parent = existing_parent_realpath(File.dirname(path))

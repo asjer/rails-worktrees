@@ -770,6 +770,15 @@ RSpec.describe Rails::Worktrees::Command do
         expect(err.string).to include('The --pi flag is only supported with wt update.')
       end
 
+      it 'rejects --pi combined with the env preview meta command' do
+        out = StringIO.new
+        err = StringIO.new
+
+        expect(build_command(argv: ['--print-env', '--pi', 'feature-one'], stdout: out, stderr: err).run).to eq(1)
+        expect(err.string).to include('The --pi flag is only supported with wt update.')
+        expect(out.string).not_to include('DEV_PORT=')
+      end
+
       it 'gives two pi worktrees their own env and database identities' do
         prepare_pi_worktree_app('linkEnvFiles' => false, 'postCreate' => ['bin/wt setup'])
 

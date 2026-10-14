@@ -15,6 +15,7 @@ module Rails
       DOCTOR_SUBCOMMAND = 'doctor'.freeze
       SETUP_SUBCOMMAND = 'setup'.freeze
       UPDATE_SUBCOMMAND = 'update'.freeze
+      PI_FLAG_EXEMPT_META_COMMANDS = %w[-h --help -v --version].freeze
 
       include GitOperations
       include EnvironmentSupport
@@ -35,6 +36,7 @@ module Rails
       end
 
       def run
+        validate_pi_flag!
         meta_command_result = handle_meta_command
         return meta_command_result unless meta_command_result.nil?
 
@@ -92,9 +94,14 @@ module Rails
         @argv.first == UPDATE_SUBCOMMAND
       end
 
-      def execute_requested_command
-        raise Error, 'The --pi flag is only supported with wt update.' if pi? && !update_subcommand?
+      def validate_pi_flag!
+        return unless pi?
+        return if update_subcommand? || PI_FLAG_EXEMPT_META_COMMANDS.include?(@argv.first)
 
+        raise Error, 'The --pi flag is only supported with wt update.'
+      end
+
+      def execute_requested_command
         handler = requested_command_handler
         return handler.call if handler
         return usage_error if invalid_worktree_command?
