@@ -297,6 +297,19 @@ RSpec.describe 'generated bin/wt template' do
     expect(stdout).to include('Dry run complete')
   end
 
+  it 'treats --pi before update as bootstrap-safe when the app bundle is incomplete' do
+    install_bootstrap_fallback_test_app
+
+    stdout, stderr, status = run_wt(
+      { 'GEM_HOME' => fallback_gem_home, 'GEM_PATH' => fallback_gem_home },
+      %w[--pi update --dry-run]
+    )
+
+    expect(status).to be_success, stderr
+    expect(stderr).to include('falling back to the globally installed wt executable')
+    expect(stdout).to include('Would update .pi/worktree.json')
+  end
+
   it 'prints a clear incomplete-bundle error for non-bootstrap commands' do
     install_bootstrap_fallback_test_app
 

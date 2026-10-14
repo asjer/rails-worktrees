@@ -80,7 +80,7 @@ def rails_worktrees_bootstrap_safe_invocation?(argv)
   return true if %w[-h --help -v --version].include?(args.first)
   return true if %w[--env --print-env].include?(args.first)
 
-  command_args = args.reject { |arg| %w[--dry-run --skip-setup --env --print-env].include?(arg) }
+  command_args = args.reject { |arg| %w[--dry-run --skip-setup --pi --env --print-env].include?(arg) }
   command = command_args.first
 
   return true if %w[setup doctor update].include?(command)

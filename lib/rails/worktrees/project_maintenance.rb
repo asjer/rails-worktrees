@@ -50,8 +50,9 @@ module Rails
       TEMPLATE_ROOT = File.expand_path('../../generators/rails/worktrees/templates', __dir__)
       FILE_ENCODING = 'UTF-8'.freeze
 
-      def initialize(root:)
+      def initialize(root:, pi_worktree: false)
         @root = root
+        @pi_worktree = pi_worktree
       end
 
       def call
@@ -60,7 +61,7 @@ module Rails
 
       private
 
-      attr_reader :root
+      attr_reader :root, :pi_worktree
 
       def maintenance_checks
         [
@@ -70,7 +71,8 @@ module Rails
           optional_updater_check(procfile_config) { |content| ProcfileUpdater.new(content: content).call },
           optional_updater_check(puma_config) { |content| PumaConfigUpdater.new(content: content).call },
           mise_check,
-          template_file_check(browser_wrapper_config)
+          template_file_check(browser_wrapper_config),
+          pi_worktree_check
         ]
       end
 
@@ -261,6 +263,31 @@ module Rails
         }
 
         updater_result_check(config, mise_updater_result(relative_path))
+      end
+
+      # Only audit .pi/worktree.json when explicitly requested or when it already runs bin/wt setup,
+      # so configs owned purely by other pi-worktree users stay untouched.
+      def pi_worktree_check
+        relative_path = PiWorktreeConfigUpdater::RELATIVE_PATH
+        path = absolute_path(relative_path)
+        content = File.file?(path) ? read_text(path) : nil
+        return unless pi_worktree || PiWorktreeConfigUpdater.configured?(content)
+
+        config = {
+          identifier: :pi_worktree,
+          category: :config,
+          relative_path: relative_path,
+          identical_headline: "#{relative_path} already runs bin/wt setup with env-file linking disabled.",
+          fixable_headline: "#{relative_path} can be updated automatically.",
+          warning_headline: "#{relative_path} needs manual review."
+        }
+        path_conflict = PiWorktreeConfigPath.conflict(root)
+        if path_conflict
+          return warning_check(config, config.fetch(:warning_headline),
+                               ["#{relative_path} #{path_conflict}; leaving it unchanged."])
+        end
+
+        updater_result_check(config, PiWorktreeConfigUpdater.new(content: content).call)
       end
 
       def mise_updater_result(relative_path)

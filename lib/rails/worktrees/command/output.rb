@@ -35,7 +35,7 @@ module Rails
                    wt --print-env <worktree-name>
                    wt doctor
                    wt setup [--dry-run] [path|name]
-                   wt update [--dry-run]
+                   wt update [--dry-run] [--pi]
                    wt remove [--dry-run] [--force] <worktree-name>
                    wt delete [--dry-run] [--force] <worktree-name>
                    wt prune [--dry-run]
@@ -47,6 +47,7 @@ module Rails
               --skip-setup               Create the worktree without running setup steps
               --force                     Delete an unmerged local branch with wt remove/delete
               --env, --print-env <name>   Preview DEV_PORT and WORKTREE_DATABASE_SUFFIX
+              --pi                        With wt update, add the pi-worktree bin/wt setup hook
 
             Quick start:
               wt                 Auto-pick a name from a bundled *.txt list
@@ -72,6 +73,7 @@ module Rails
               - wt setup reruns setup for the current checkout, a managed worktree name, or a specific checkout path, including manually-created worktrees
               - wt doctor audits install/config drift plus basic worktree health without changing files
               - wt update applies safe file-based fixes for managed installer artifacts and config hints
+              - wt update --pi also writes .pi/worktree.json for the pi-worktree extension (not Pi core)
               - wt remove/delete can run from the main checkout or any sibling worktree, but never remove the worktree you're currently in
               - wt prune removes merged worktrees created by wt while skipping the main checkout and the checkout you're in
               - auto-discovers bundled *.txt files from #{@configuration.name_sources_path}

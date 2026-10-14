@@ -1,4 +1,5 @@
 require 'fileutils'
+require 'json'
 require 'tmpdir'
 
 require 'rails/worktrees'
@@ -305,6 +306,107 @@ RSpec.describe Worktrees::Generators::InstallGenerator do
     end
   end
 
+  describe '--pi' do
+    def pi_config_path
+      File.join(tmpdir, '.pi/worktree.json')
+    end
+
+    def write_pi_config(content)
+      FileUtils.mkdir_p(File.dirname(pi_config_path))
+      File.write(pi_config_path, content)
+    end
+
+    def read_pi_config
+      JSON.parse(File.read(pi_config_path, encoding: 'UTF-8'))
+    end
+
+    it 'does not write pi-worktree configuration without the option' do
+      run_generator
+      run_generator('--yolo')
+
+      expect(File.exist?(pi_config_path)).to be(false)
+      expect(File.exist?(File.dirname(pi_config_path))).to be(false)
+    end
+
+    it 'creates .pi/worktree.json that runs bin/wt setup without env-file linking' do
+      run_generator('--pi')
+
+      expect(read_pi_config).to eq('linkEnvFiles' => false, 'postCreate' => ['bin/wt setup'])
+    end
+
+    it 'merges into existing configuration and keeps custom hooks' do
+      write_pi_config(%({"dir": ".trees", "postCreate": ["npm install"], "preRemove": ["echo bye"]}\n))
+
+      run_generator('--pi')
+
+      expect(read_pi_config).to eq(
+        'dir' => '.trees',
+        'postCreate' => ['npm install', 'bin/wt setup'],
+        'preRemove' => ['echo bye'],
+        'linkEnvFiles' => false
+      )
+    end
+
+    it 'is idempotent across repeated installs' do
+      run_generator('--pi')
+      first_content = File.read(pi_config_path)
+      statuses = capture_generator_statuses('--pi')
+
+      expect(File.read(pi_config_path)).to eq(first_content)
+      expect(read_pi_config['postCreate']).to eq(['bin/wt setup'])
+      expect(statuses).to include([:identical, '.pi/worktree.json', :blue])
+    end
+
+    it 'leaves conflicting configuration untouched and explains why' do
+      original = %({"linkEnvFiles": true, "postCreate": ["npm install"]}\n)
+      write_pi_config(original)
+
+      output = capture_generator_output('--pi')
+
+      expect(File.read(pi_config_path)).to eq(original)
+      expect(output).to include('"linkEnvFiles": false')
+      expect(output).to include('.pi/worktree.json needs manual review')
+    end
+
+    it 'refuses to write through a .pi directory symlinked outside the app' do
+      outside_dir = Dir.mktmpdir('rails-worktrees-outside-pi')
+      File.symlink(outside_dir, File.join(tmpdir, '.pi'))
+
+      output = capture_generator_output('--pi')
+
+      expect(Dir.children(outside_dir)).to be_empty
+      expect(output).to include('.pi/worktree.json resolves outside the app')
+    ensure
+      FileUtils.rm_rf(outside_dir)
+    end
+
+    it 'leaves a non-regular .pi/worktree.json path untouched' do
+      FileUtils.mkdir_p(File.join(pi_config_path, 'nested'))
+
+      output = capture_generator_output('--pi')
+
+      expect(File.directory?(pi_config_path)).to be(true)
+      expect(output).to include('.pi/worktree.json is not a regular file')
+    end
+
+    it 'reports a conflict when .pi is a regular file' do
+      File.write(File.join(tmpdir, '.pi'), 'not a directory')
+
+      output = capture_generator_output('--pi')
+
+      expect(File.read(File.join(tmpdir, '.pi'))).to eq('not a directory')
+      expect(output).to include('.pi/worktree.json cannot be created because .pi is not a directory')
+    end
+
+    it 'mentions that the pi-worktree extension is required' do
+      output = capture_generator_output('--pi')
+
+      expect(output).to include('.pi/worktree.json')
+      expect(output).to include('pi install pi-worktree')
+      expect(output).to include('not native Pi core configuration')
+    end
+  end
+
   it 'writes the conductor workspace override when requested' do
     run_generator('--conductor')
 
@@ -515,6 +617,11 @@ RSpec.describe Worktrees::Generators::InstallGenerator do
     it 'describes the optional browser helper flag' do
       expect(described_class.class_options.fetch(:browser).description)
         .to eq('Generate bin/ob to open localhost:$DEV_PORT routes for this app/worktree')
+    end
+
+    it 'describes the opt-in pi-worktree flag' do
+      expect(described_class.class_options.fetch(:pi).description)
+        .to eq('Generate .pi/worktree.json so the pi-worktree extension runs bin/wt setup in new worktrees')
     end
 
     it 'points at the shared templates directory' do

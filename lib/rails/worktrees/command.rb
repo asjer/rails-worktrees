@@ -15,6 +15,7 @@ module Rails
       DOCTOR_SUBCOMMAND = 'doctor'.freeze
       SETUP_SUBCOMMAND = 'setup'.freeze
       UPDATE_SUBCOMMAND = 'update'.freeze
+      PI_FLAG_EXEMPT_META_COMMANDS = %w[-h --help -v --version].freeze
 
       include GitOperations
       include EnvironmentSupport
@@ -35,6 +36,7 @@ module Rails
       end
 
       def run
+        validate_pi_flag!
         meta_command_result = handle_meta_command
         return meta_command_result unless meta_command_result.nil?
 
@@ -52,10 +54,13 @@ module Rails
 
       def skip_setup? = @skip_setup
 
+      def pi? = @pi
+
       def extract_flags!
         @dry_run = extract_flag!('--dry-run')
         @force = extract_flag!('--force')
         @skip_setup = extract_flag!('--skip-setup')
+        @pi = extract_flag!('--pi')
       end
 
       def extract_flag!(flag)
@@ -87,6 +92,13 @@ module Rails
 
       def update_subcommand?
         @argv.first == UPDATE_SUBCOMMAND
+      end
+
+      def validate_pi_flag!
+        return unless pi?
+        return if update_subcommand? || PI_FLAG_EXEMPT_META_COMMANDS.include?(@argv.first)
+
+        raise Error, 'The --pi flag is only supported with wt update.'
       end
 
       def execute_requested_command
@@ -259,7 +271,7 @@ module Rails
       end
 
       def validate_update_args!
-        raise Error, 'Usage: wt update [--dry-run] [path]' unless [1, 2].include?(@argv.length)
+        raise Error, 'Usage: wt update [--dry-run] [--pi] [path]' unless [1, 2].include?(@argv.length)
         raise Error, 'The --force flag is only supported with wt remove.' if force?
         raise Error, 'The --skip-setup flag is only supported when creating a worktree.' if skip_setup?
       end
@@ -638,7 +650,7 @@ module Rails
       end
 
       def project_maintenance_report(root)
-        ::Rails::Worktrees::ProjectMaintenance.new(root: root).call
+        ::Rails::Worktrees::ProjectMaintenance.new(root: root, pi_worktree: pi?).call
       end
 
       def doctor_worktree_checks(repository)
