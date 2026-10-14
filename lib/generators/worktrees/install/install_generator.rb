@@ -7,6 +7,7 @@ require_relative '../../../rails/worktrees/database_config_updater'
 require_relative '../../../rails/worktrees/procfile_updater'
 require_relative '../../../rails/worktrees/mise_toml_updater'
 require_relative '../../../rails/worktrees/puma_config_updater'
+require_relative '../../../rails/worktrees/pi_worktree_config_updater'
 
 module Worktrees
   module Generators
@@ -35,8 +36,13 @@ module Worktrees
                      'Apply common Procfile.dev, config/puma.rb, and mise .env',
                      'follow-up edits when safe; also generate bin/ob'
                    ].join(' ')
+      class_option :pi,
+                   type: :boolean,
+                   default: false,
+                   desc: 'Generate .pi/worktree.json so the pi-worktree extension runs bin/wt setup in new worktrees'
 
       FILE_ENCODING = 'UTF-8'.freeze
+      PI_WORKTREE_CONFIG = ::Rails::Worktrees::PiWorktreeConfigUpdater::RELATIVE_PATH
 
       FOLLOW_UP_TEMPLATE = <<~TEXT.freeze
           ============================================
@@ -97,6 +103,20 @@ module Worktrees
         announce_database_update(result)
       end
 
+      def configure_pi_worktree
+        return unless options[:pi]
+
+        path = pi_worktree_config_path
+        return announce_symlinked_pi_worktree_config if File.symlink?(path)
+
+        result = ::Rails::Worktrees::PiWorktreeConfigUpdater.new(
+          content: File.exist?(path) ? File.read(path, encoding: FILE_ENCODING) : nil
+        ).call
+        write_pi_worktree_config(path, result.content) if result.changed?
+        @pi_worktree_outcome = result.status
+        announce_updater_result(PI_WORKTREE_CONFIG, result)
+      end
+
       def verify_installation
         if git_repo?
           say_status(:ok, 'git repository detected', :green)
@@ -130,6 +150,21 @@ module Worktrees
         ]
       end
 
+      def pi_worktree_config_path
+        File.join(destination_root, PI_WORKTREE_CONFIG)
+      end
+
+      def write_pi_worktree_config(path, content)
+        FileUtils.mkdir_p(File.dirname(path))
+        File.write(path, content)
+      end
+
+      def announce_symlinked_pi_worktree_config
+        @pi_worktree_outcome = :conflict
+        say_status(:skip, PI_WORKTREE_CONFIG, :yellow)
+        say("#{PI_WORKTREE_CONFIG} is a symlink; leaving it unchanged. Add the bin/wt setup hook manually.")
+      end
+
       def database_update_result
         result = ::Rails::Worktrees::DatabaseConfigUpdater.new(
           content: File.read(database_config_path, encoding: FILE_ENCODING)
@@ -145,7 +180,7 @@ module Worktrees
       end
 
       def follow_up_notes_text
-        [super, browser_follow_up_notes_text, puma_follow_up_notes_text].join
+        [super, browser_follow_up_notes_text, puma_follow_up_notes_text, pi_worktree_follow_up_notes_text].join
       end
 
       def installed_items_text
@@ -156,7 +191,29 @@ module Worktrees
         items << '      • bin/ob' if install_browser_wrapper?
         items << '      • Procfile.dev.worktree.example' unless options[:yolo]
         items << database_follow_up_line if database_follow_up_line
+        items << pi_worktree_follow_up_line if pi_worktree_follow_up_line
         items.join("\n")
+      end
+
+      def pi_worktree_follow_up_line
+        case @pi_worktree_outcome
+        when :updated, :identical
+          "      • #{PI_WORKTREE_CONFIG} (pi-worktree postCreate runs bin/wt setup)"
+        when :conflict
+          "      • #{PI_WORKTREE_CONFIG} needs manual review — see the message above"
+        end
+      end
+
+      def pi_worktree_follow_up_notes_text
+        return '' unless options[:pi]
+
+        [
+          '',
+          '      Pi worktrees:',
+          "        #{PI_WORKTREE_CONFIG} is read by the pi-worktree extension",
+          '        ($ pi install pi-worktree); it is not native Pi core configuration.',
+          '        Add the worktree directory (default .worktrees/) to .gitignore.'
+        ].join("\n")
       end
 
       def database_follow_up_line

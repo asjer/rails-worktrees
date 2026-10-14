@@ -17,6 +17,8 @@ bin/rails generate worktrees:install
 bin/rails generate worktrees:install --browser
 # or, to apply the common Procfile.dev + Puma + mise follow-ups automatically:
 bin/rails generate worktrees:install --yolo
+# optionally, to let the pi-worktree extension run bin/wt setup in new Pi worktrees:
+bin/rails generate worktrees:install --pi
 ```
 
 The generated initializer writes app config under `Rails.application.config.x.rails_worktrees`, so the file stays safe to load even in environments like `test` where the gem is only bundled for `:development`. When `rails-worktrees` is loaded, the gem applies those settings for both the CLI and in-process Rails usage.
@@ -28,6 +30,7 @@ The installer adds:
 - `config/initializers/rails_worktrees.rb` — optional configuration
 - `Procfile.dev.worktree.example` — a copy-paste helper for `${DEV_PORT:-3000}` in `Procfile.dev` on regular installs
 - a safe update to `config/database.yml` for common development/test database names
+- `.pi/worktree.json` — only with `--pi`; see [Pi worktrees](#pi-worktrees-pi-worktree-extension)
 
 With `--yolo`, the installer also:
 
@@ -51,6 +54,7 @@ bin/wt setup ../my-project.worktrees/my-feature # setup a specific checkout with
 bin/wt doctor                   # audit install/config drift and basic worktree health
 bin/wt update --dry-run         # preview safe maintenance fixes
 bin/wt update                   # apply safe maintenance fixes for managed files
+bin/wt update --pi              # also add the pi-worktree hook in .pi/worktree.json
 bin/wt remove my-feature        # remove a worktree and delete its local branch
 bin/wt delete my-feature        # alias for `bin/wt remove`
 bin/wt remove --force my-feature # also delete an unmerged local branch
@@ -72,6 +76,7 @@ bin/ob --print-url '?from=nav'  # print the resolved URL without opening a brows
 | `--skip-setup` | Create a worktree without running setup steps |
 | `--force` | Force branch deletion for `bin/wt remove` / `bin/wt delete` |
 | `--env`, `--print-env <name>` | Preview `DEV_PORT` and `WORKTREE_DATABASE_SUFFIX` |
+| `--pi` | With `bin/wt update`, create or merge `.pi/worktree.json` for the pi-worktree extension |
 
 ### Default behavior
 
@@ -159,6 +164,41 @@ bin/wt prune --dry-run
 `bin/wt doctor` checks the generated initializer, `bin/wt`, optional `bin/ob`, supported config files such as `config/database.yml`, `Procfile.dev`, `config/puma.rb`, and `mise.toml`/`.mise.toml`, plus basic repository/worktree conditions like resolving `origin`'s default branch and spotting stale registered worktree paths.
 
 `bin/wt update` is intentionally conservative: it only applies safe file-based fixes for managed templates and supported config shapes. It does **not** delete branches, remove worktrees, or rewrite ambiguous custom files automatically.
+
+`bin/wt doctor` and `bin/wt update` only look at `.pi/worktree.json` once it already runs `bin/wt setup`, or when you pass `bin/wt update --pi`.
+
+### Pi worktrees (pi-worktree extension)
+
+If you create worktrees from [Pi](https://github.com/badlogic/pi-mono) with `pi --worktree` or `/worktree`, rails-worktrees can configure them to run `bin/wt setup` automatically. This is opt-in:
+
+```bash
+bin/rails generate worktrees:install --pi
+# or, in an app that already has rails-worktrees installed:
+bin/wt update --pi
+```
+
+Both commands create or update `.pi/worktree.json`:
+
+```json
+{
+  "linkEnvFiles": false,
+  "postCreate": [
+    "bin/wt setup"
+  ]
+}
+```
+
+`.pi/worktree.json` is read by the [pi-worktree](https://www.npmjs.com/package/pi-worktree) npm extension (`pi install pi-worktree`), **not** by Pi core. Without that extension, the file has no effect. pi-worktree places worktrees in `.worktrees/` inside the repository by default, so add that directory to `.gitignore`.
+
+`linkEnvFiles: false` matters. By default, pi-worktree symlinks the main checkout's gitignored `.env*` files into a new worktree before `postCreate` runs. `bin/wt setup` keeps existing `.env` values, so every Pi worktree would then reuse the main checkout's `DEV_PORT` and `WORKTREE_DATABASE_SUFFIX`, and setup would write through the symlink into the main checkout. With linking disabled, each worktree gets its own `.env` and database identity.
+
+Existing configuration is merged, not replaced:
+
+- other keys (`dir`, `branchPrefix`, `preRemove`, …) and custom `postCreate` hooks are preserved; `bin/wt setup` is appended once and never duplicated
+- `linkEnvFiles` is only added when it is absent; an explicit `"linkEnvFiles": true`, invalid JSON, or a non-list `postCreate` is left untouched with a message explaining what to change by hand
+- no `preRemove` hook is added, and the worktree directory and branch prefix stay under your control
+
+pi-worktree runs each `postCreate` step with a 120-second timeout. If a first `bundle install` or `db:prepare` takes longer, run `bin/wt setup` again inside the worktree.
 
 ### Updating old `bin/wt` wrappers
 
