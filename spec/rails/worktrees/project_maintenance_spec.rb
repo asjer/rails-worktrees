@@ -1,5 +1,6 @@
 require 'spec_helper'
 require 'fileutils'
+require 'json'
 require 'tmpdir'
 
 RSpec.describe Rails::Worktrees::ProjectMaintenance do
@@ -104,6 +105,51 @@ RSpec.describe Rails::Worktrees::ProjectMaintenance do
     expect(bin_wt.headline).to eq('bin/wt needs its executable bit restored.')
     expect(bin_wt.make_executable).to be(true)
     expect(bin_wt.apply_messages).to eq(['Restored executable permissions on bin/wt.'])
+  end
+
+  describe 'pi-worktree configuration' do
+    it 'ignores .pi/worktree.json unless explicitly requested or already opted in' do
+      write_healthy_files
+      write_file('.pi/worktree.json', %({"postCreate": ["npm install"]}\n))
+
+      report = described_class.new(root: tmpdir).call
+
+      expect(check(report, :pi_worktree)).to be_nil
+      expect(report).to be_ok
+    end
+
+    it 'creates the config when explicitly requested' do
+      pi_check = check(described_class.new(root: tmpdir, pi_worktree: true).call, :pi_worktree)
+
+      expect(pi_check).to be_fixable
+      expect(pi_check.relative_path).to eq('.pi/worktree.json')
+      expect(JSON.parse(pi_check.updated_content)).to eq('linkEnvFiles' => false, 'postCreate' => ['bin/wt setup'])
+    end
+
+    it 'merges into an existing config when explicitly requested' do
+      write_file('.pi/worktree.json', %({"postCreate": ["npm install"]}\n))
+
+      pi_check = check(described_class.new(root: tmpdir, pi_worktree: true).call, :pi_worktree)
+
+      expect(JSON.parse(pi_check.updated_content))
+        .to eq('postCreate' => ['npm install', 'bin/wt setup'], 'linkEnvFiles' => false)
+    end
+
+    it 'keeps auditing a config that already contains the setup hook' do
+      write_file('.pi/worktree.json', %({"linkEnvFiles": false, "postCreate": ["bin/wt setup"]}\n))
+
+      expect(check(described_class.new(root: tmpdir).call, :pi_worktree)).to be_ok
+    end
+
+    it 'warns when an opted-in config re-enables env-file linking' do
+      write_file('.pi/worktree.json', %({"linkEnvFiles": true, "postCreate": ["bin/wt setup"]}\n))
+
+      pi_check = check(described_class.new(root: tmpdir).call, :pi_worktree)
+
+      expect(pi_check).to be_warning
+      expect(pi_check.messages.join).to include('"linkEnvFiles": false')
+      expect(pi_check).not_to be_updatable
+    end
   end
 
   it 'marks the older Ruby bin/wt binstub as fixable with the self-bootstrapping template' do

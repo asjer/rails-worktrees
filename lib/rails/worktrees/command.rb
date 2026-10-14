@@ -52,10 +52,13 @@ module Rails
 
       def skip_setup? = @skip_setup
 
+      def pi? = @pi
+
       def extract_flags!
         @dry_run = extract_flag!('--dry-run')
         @force = extract_flag!('--force')
         @skip_setup = extract_flag!('--skip-setup')
+        @pi = extract_flag!('--pi')
       end
 
       def extract_flag!(flag)
@@ -90,6 +93,8 @@ module Rails
       end
 
       def execute_requested_command
+        raise Error, 'The --pi flag is only supported with wt update.' if pi? && !update_subcommand?
+
         handler = requested_command_handler
         return handler.call if handler
         return usage_error if invalid_worktree_command?
@@ -259,7 +264,7 @@ module Rails
       end
 
       def validate_update_args!
-        raise Error, 'Usage: wt update [--dry-run] [path]' unless [1, 2].include?(@argv.length)
+        raise Error, 'Usage: wt update [--dry-run] [--pi] [path]' unless [1, 2].include?(@argv.length)
         raise Error, 'The --force flag is only supported with wt remove.' if force?
         raise Error, 'The --skip-setup flag is only supported when creating a worktree.' if skip_setup?
       end
@@ -638,7 +643,7 @@ module Rails
       end
 
       def project_maintenance_report(root)
-        ::Rails::Worktrees::ProjectMaintenance.new(root: root).call
+        ::Rails::Worktrees::ProjectMaintenance.new(root: root, pi_worktree: pi?).call
       end
 
       def doctor_worktree_checks(repository)

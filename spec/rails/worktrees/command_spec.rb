@@ -1,6 +1,8 @@
 require 'fileutils'
 require 'open3'
+require 'json'
 require 'rbconfig'
+require 'shellwords'
 require 'stringio'
 require 'tmpdir'
 
@@ -694,6 +696,101 @@ RSpec.describe Rails::Worktrees::Command do
 
       expect(err.string).to include('Refusing to overwrite symlinked path')
       expect(File.read(outside_target)).to eq("#!/usr/bin/env ruby\nputs 'outside'\n")
+    end
+
+    describe 'pi-worktree integration' do
+      def pi_config_path = File.join(repo_path, '.pi/worktree.json')
+      def read_pi_config = JSON.parse(File.read(pi_config_path))
+
+      def prepare_pi_worktree_app(pi_config)
+        install_minimal_rails_app_files
+        write_repo_file('.gitignore', ".env\n.worktrees/\n")
+        write_repo_file('.pi/worktree.json', JSON.generate(pi_config))
+        git!('-C', repo_path, 'add', '.gitignore', '.pi/worktree.json')
+        git!('-C', repo_path, 'commit', '-m', 'Add pi-worktree config')
+        write_repo_file('.env', "DEV_PORT=3000\nWORKTREE_DATABASE_SUFFIX=_main\n")
+      end
+
+      # Mirrors pi-worktree 1.3.3: add the worktree, link ignored .env* files unless
+      # linkEnvFiles is false, then run each postCreate hook inside the worktree.
+      def create_pi_worktree(name)
+        config = read_pi_config
+        path = File.join(repo_path, '.worktrees', name)
+        git!('-C', repo_path, 'worktree', 'add', '-b', "worktree/#{name}", path, 'HEAD')
+        link_ignored_env_files(path) unless config['linkEnvFiles'] == false
+        config.fetch('postCreate').each { |hook| run_pi_hook(hook, path) }
+        path
+      end
+
+      def link_ignored_env_files(path)
+        Dir.glob('.env*', File::FNM_DOTMATCH, base: repo_path).each do |file|
+          next if file == '.env.local' || !File.file?(File.join(repo_path, file))
+          next unless system('git', '-C', repo_path, 'check-ignore', '-q', file)
+
+          File.symlink(File.join(repo_path, file), File.join(path, file))
+        end
+      end
+
+      def run_pi_hook(hook, path)
+        args = Shellwords.split(hook)
+        raise "Unexpected pi-worktree hook: #{hook}" unless args.first(2) == %w[bin/wt setup]
+
+        expect(build_command(argv: args.drop(1), cwd: path).run).to eq(0)
+      end
+
+      def env_identity(path)
+        File.read(File.join(path, '.env')).scan(/^(DEV_PORT|WORKTREE_DATABASE_SUFFIX)=(.+)$/).to_h
+      end
+
+      it 'creates .pi/worktree.json only when wt update receives --pi' do
+        install_worktrees_files
+
+        expect(build_command(argv: ['update']).run).to eq(0)
+        expect(File.exist?(pi_config_path)).to be(false)
+
+        expect(build_command(argv: ['update', '--pi']).run).to eq(0)
+        expect(read_pi_config).to eq('linkEnvFiles' => false, 'postCreate' => ['bin/wt setup'])
+      end
+
+      it 'keeps repeated wt update --pi runs idempotent' do
+        install_worktrees_files
+        expect(build_command(argv: ['update', '--pi']).run).to eq(0)
+        out = StringIO.new
+
+        expect(build_command(argv: ['update', '--pi'], stdout: out).run).to eq(0)
+
+        expect(read_pi_config['postCreate']).to eq(['bin/wt setup'])
+        expect(out.string).to include('.pi/worktree.json already runs bin/wt setup with env-file linking disabled.')
+      end
+
+      it 'rejects --pi outside wt update' do
+        err = StringIO.new
+
+        expect(build_command(argv: ['doctor', '--pi'], stderr: err).run).to eq(1)
+        expect(err.string).to include('The --pi flag is only supported with wt update.')
+      end
+
+      it 'gives two pi worktrees their own env and database identities' do
+        prepare_pi_worktree_app('linkEnvFiles' => false, 'postCreate' => ['bin/wt setup'])
+
+        alpha = create_pi_worktree('alpha')
+        beta = create_pi_worktree('beta')
+
+        expect([alpha, beta].map { |path| File.symlink?(File.join(path, '.env')) }).to eq([false, false])
+        identities = [env_identity(repo_path), env_identity(alpha), env_identity(beta)]
+        expect(identities.map { |identity| identity['DEV_PORT'] }.uniq.length).to eq(3)
+        expect(identities.map { |identity| identity['WORKTREE_DATABASE_SUFFIX'] }.uniq.length).to eq(3)
+        expect(File.read(File.join(repo_path, '.env'))).to eq("DEV_PORT=3000\nWORKTREE_DATABASE_SUFFIX=_main\n")
+      end
+
+      it 'shows why env-file linking must stay disabled' do
+        prepare_pi_worktree_app('postCreate' => ['bin/wt setup'])
+
+        alpha = create_pi_worktree('alpha')
+
+        expect(File.symlink?(File.join(alpha, '.env'))).to be(true)
+        expect(env_identity(alpha)).to eq(env_identity(repo_path))
+      end
     end
 
     context 'with the implicit project-relative default root' do
