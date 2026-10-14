@@ -12,7 +12,7 @@ module Rails
 
       RELATIVE_PATH = '.pi/worktree.json'.freeze
       SETUP_COMMAND = 'bin/wt setup'.freeze
-      SETUP_COMMAND_PATTERN = %r{\A\s*(?:\./)?bin/wt\s+setup(?:\s|\z)}
+      SETUP_COMMAND_PATTERN = %r{\A\s*(?:\./)?bin/wt\s+setup\s*\z}
 
       def self.configured?(content)
         return false if content.nil?

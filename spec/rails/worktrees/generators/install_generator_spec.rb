@@ -368,6 +368,18 @@ RSpec.describe Worktrees::Generators::InstallGenerator do
       expect(output).to include('.pi/worktree.json needs manual review')
     end
 
+    it 'refuses to write through a .pi directory symlinked outside the app' do
+      outside_dir = Dir.mktmpdir('rails-worktrees-outside-pi')
+      File.symlink(outside_dir, File.join(tmpdir, '.pi'))
+
+      output = capture_generator_output('--pi')
+
+      expect(Dir.children(outside_dir)).to be_empty
+      expect(output).to include('.pi/worktree.json resolves outside the app')
+    ensure
+      FileUtils.rm_rf(outside_dir)
+    end
+
     it 'mentions that the pi-worktree extension is required' do
       output = capture_generator_output('--pi')
 
