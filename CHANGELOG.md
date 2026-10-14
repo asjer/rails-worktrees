@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.0](https://github.com/asjer/rails-worktrees/compare/v0.7.4...v0.8.0) (2026-10-14)
+
+
+### Features
+
+* **pi:** add opt-in pi-worktree setup hook generation ([ccaa0ea](https://github.com/asjer/rails-worktrees/commit/ccaa0ead9fe31a01ac2c8016a51fd60b1611daef)), closes [#53](https://github.com/asjer/rails-worktrees/issues/53)
+
 ## [0.7.4](https://github.com/asjer/rails-worktrees/compare/v0.7.3...v0.7.4) (2026-08-15)
 
 
