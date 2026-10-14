@@ -107,7 +107,8 @@ module Worktrees
         return unless options[:pi]
 
         path = pi_worktree_config_path
-        return announce_symlinked_pi_worktree_config if File.symlink?(path)
+        unsafe_reason = unsafe_pi_worktree_config_reason(path)
+        return announce_unsafe_pi_worktree_config(unsafe_reason) if unsafe_reason
 
         result = ::Rails::Worktrees::PiWorktreeConfigUpdater.new(
           content: File.exist?(path) ? File.read(path, encoding: FILE_ENCODING) : nil
@@ -159,10 +160,25 @@ module Worktrees
         File.write(path, content)
       end
 
-      def announce_symlinked_pi_worktree_config
+      def unsafe_pi_worktree_config_reason(path)
+        return 'is a symlink' if File.symlink?(path)
+
+        root = File.realpath(destination_root)
+        parent = existing_parent_realpath(File.dirname(path))
+        return if parent == root || parent.start_with?("#{root}#{File::SEPARATOR}")
+
+        'resolves outside the app through a symlinked directory'
+      end
+
+      def existing_parent_realpath(path)
+        path = File.dirname(path) until File.exist?(path)
+        File.realpath(path)
+      end
+
+      def announce_unsafe_pi_worktree_config(reason)
         @pi_worktree_outcome = :conflict
         say_status(:skip, PI_WORKTREE_CONFIG, :yellow)
-        say("#{PI_WORKTREE_CONFIG} is a symlink; leaving it unchanged. Add the bin/wt setup hook manually.")
+        say("#{PI_WORKTREE_CONFIG} #{reason}; leaving it unchanged. Add the bin/wt setup hook manually.")
       end
 
       def database_update_result

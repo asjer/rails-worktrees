@@ -60,10 +60,19 @@ RSpec.describe Rails::Worktrees::PiWorktreeConfigUpdater do
     end
 
     it 'recognizes an equivalent existing setup hook' do
-      result = patch(%({"linkEnvFiles": false, "postCreate": ["./bin/wt setup --dry-run", "yarn"]}\n))
+      content = %({"linkEnvFiles": false, "postCreate": ["./bin/wt setup", "yarn"]}\n)
+      result = patch(content)
 
       expect(result.status).to eq(:identical)
-      expect(result.content).to eq(%({"linkEnvFiles": false, "postCreate": ["./bin/wt setup --dry-run", "yarn"]}\n))
+      expect(result.content).to eq(content)
+    end
+
+    it 'does not treat a preview-only setup hook as configured' do
+      result = patch(%({"linkEnvFiles": false, "postCreate": ["bin/wt setup --dry-run"]}))
+
+      expect(result.status).to eq(:updated)
+      expect(parsed(result)['postCreate']).to eq(['bin/wt setup --dry-run', 'bin/wt setup'])
+      expect(described_class.configured?(%({"postCreate": ["bin/wt setup --dry-run"]}))).to be(false)
     end
 
     it 'only disables env-file linking when the hook already exists' do
