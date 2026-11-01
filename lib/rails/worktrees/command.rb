@@ -17,7 +17,7 @@ module Rails
       UPDATE_SUBCOMMAND = 'update'.freeze
       PI_FLAG_EXEMPT_META_COMMANDS = %w[-h --help help -v --version version].freeze
       # Command words that wt never treats as a worktree name.
-      RESERVED_WORDS = %w[help version doctor setup update prune remove delete].freeze
+      RESERVED_WORDS = %w[help version doctor setup update teardown prune remove delete].freeze
 
       include GitOperations
       include EnvironmentSupport

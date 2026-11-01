@@ -1,9 +1,12 @@
 require 'open3'
+require 'tempfile'
 
 module Rails
   module Worktrees
     # Runs teardown in the target app, without borrowing the caller's suffix or bundle.
     class TeardownRunner
+      RUNTIME_KEYS = %w[PATH HOME USER LOGNAME SHELL LANG LANGUAGE LC_ALL LC_CTYPE TMPDIR TMP TEMP
+                        GEM_HOME GEM_PATH LD_LIBRARY_PATH SSL_CERT_FILE SSL_CERT_DIR].freeze
       RUBY_LOADER_KEYS = %w[RUBYOPT RUBYLIB].freeze
       SUFFIX_KEY = 'WORKTREE_DATABASE_SUFFIX'.freeze
       SCRIPT = File.expand_path('teardown_script.rb', __dir__).freeze
@@ -18,14 +21,22 @@ module Rails
       def call(dry_run: false)
         env = runtime_env
         validate_environment!(env)
-        argv = [rails_bin, 'runner', SCRIPT]
-        argv << '--dry-run' if dry_run
-        run(env, argv)
+        Tempfile.create('rails-worktrees-teardown') do |plan|
+          run_teardown(env, plan.path, dry_run: dry_run)
+        end
       rescue SystemCallError => e
         raise Error, "Could not start teardown: #{e.message}"
       end
 
       private
+
+      def run_teardown(env, plan_path, dry_run:)
+        run(env.merge('RAILS_ENV' => 'test', 'RACK_ENV' => 'test'),
+            [rails_bin, 'runner', SCRIPT, '--export-test-configs', plan_path])
+        argv = [rails_bin, 'runner', SCRIPT, '--test-configs', plan_path]
+        argv << '--dry-run' if dry_run
+        run(env, argv)
+      end
 
       def validate_environment!(env)
         if env[SUFFIX_KEY].to_s.strip.empty?
@@ -45,8 +56,8 @@ module Rails
       def rails_bin = File.join(@target_dir, 'bin', 'rails')
 
       def runtime_env
-        env = @env.reject { |key, _| key.start_with?('BUNDLE_', 'GIT_') || RUBY_LOADER_KEYS.include?(key) }
-        env.delete(SUFFIX_KEY) unless @use_current_env
+        source = @use_current_env ? @env : @env.slice(*RUNTIME_KEYS)
+        env = source.reject { |key, _| key.start_with?('BUNDLE_', 'GIT_') || RUBY_LOADER_KEYS.include?(key) }
         suffix = file_suffix
         env[SUFFIX_KEY] = suffix unless suffix.nil?
         env.merge('RAILS_ENV' => 'development', 'RACK_ENV' => 'development',

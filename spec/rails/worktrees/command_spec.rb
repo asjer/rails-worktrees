@@ -137,7 +137,7 @@ RSpec.describe Rails::Worktrees::Command do
     end
 
     it 'never routes a reserved word to worktree creation' do
-      %w[help version doctor setup update prune remove delete].each do |word|
+      %w[help version doctor setup update teardown prune remove delete].each do |word|
         command = build_command(argv: ['--dry-run', word])
         allow(command).to receive(:execute_worktree_command)
 
@@ -148,7 +148,7 @@ RSpec.describe Rails::Worktrees::Command do
     end
 
     it 'never auto-picks a reserved word from a name list' do
-      File.write(File.join(configuration.name_sources_path, 'cities.txt'), "help\nversion\n")
+      File.write(File.join(configuration.name_sources_path, 'cities.txt'), "help\nversion\nteardown\n")
       err = StringIO.new
 
       expect(build_command(argv: ['--dry-run'], stderr: err).run).to eq(1)
@@ -163,7 +163,7 @@ RSpec.describe Rails::Worktrees::Command do
 
       expect(out.string).to include(
         'reserved words are commands, never new worktree names: ' \
-        'help, version, doctor, setup, update, prune, remove, delete'
+        'help, version, doctor, setup, update, teardown, prune, remove, delete'
       )
     end
 
@@ -419,6 +419,29 @@ RSpec.describe Rails::Worktrees::Command do
         expect(File.exist?(File.join(target, 'effects.log'))).to be(false)
       end
 
+      it 'boots test separately instead of deleting its development-loaded fallback configuration' do
+        File.write(File.join(target, 'databases-test.json'),
+                   JSON.generate('test' => ['actual_test_feature_one']))
+        out = StringIO.new
+
+        expect(build_command(argv: %w[teardown --dry-run], cwd: target, stdout: out).run).to eq(0)
+        expect(out.string).to include("Would drop database 'actual_test_feature_one'")
+        expect(out.string).not_to include("Would drop database 'app_test_feature_one'")
+        expect(File.exist?(File.join(target, 'effects.log'))).to be(false)
+      end
+
+      it 'honors Rails production metadata for all databases before any effects, even with checks disabled' do
+        File.write(File.join(target, 'protected-test'), '')
+        install_teardown_overmind(target, File.join(tmpdir, 'tools'))
+        out = StringIO.new
+
+        expect(build_command(argv: ['teardown'], cwd: target, stdout: out,
+                             env: { 'DISABLE_DATABASE_ENVIRONMENT_CHECK' => '1' }).run).to eq(1)
+        expect(out.string).to include('Database is protected: production')
+        expect(File.exist?(File.join(target, 'effects.log'))).to be(false)
+        expect(File.directory?(target)).to be(true)
+      end
+
       it 'preserves the worktree and branch when dropping a database fails' do
         File.write(File.join(target, 'fail-drop'), '')
 
@@ -445,6 +468,16 @@ RSpec.describe Rails::Worktrees::Command do
                                       "Would drop database 'app_test_feature_one_queue'",
                                       'Would remove registered worktree')
         expect(File.directory?(target)).to be(true)
+        expect(File.exist?(File.join(target, 'effects.log'))).to be(false)
+      end
+
+      it 'never drops a sibling database selected by inherited routing variables' do
+        out = StringIO.new
+        caller_env = { 'DATABASE_URL' => 'postgresql://localhost/app_development_feature_one_sibling' }
+
+        expect(build_command(argv: %w[remove --dry-run feature-one], env: caller_env, stdout: out).run).to eq(0)
+        expect(out.string).to include("Would drop database 'app_development_feature_one'")
+        expect(out.string).not_to include('app_development_feature_one_sibling')
         expect(File.exist?(File.join(target, 'effects.log'))).to be(false)
       end
 
