@@ -1,4 +1,5 @@
 require 'spec_helper'
+require 'json'
 require 'open3'
 require 'fileutils'
 require 'stringio'
@@ -32,6 +33,7 @@ RSpec.describe Rails::Worktrees::PostCreateRunner do
     Rails::Worktrees::Configuration.new.tap do |c|
       c.run_bundle_install = false
       c.run_yarn_install = false
+      c.run_playwright_install = false
       c.run_db_prepare = false
       c.run_test_db_prepare = false
       c.run_test_assets_precompile = false
@@ -64,7 +66,8 @@ RSpec.describe Rails::Worktrees::PostCreateRunner do
                    'BUNDLE_GEMFILE', 'BUNDLE_PATH', 'GEM_HOME', 'GEM_PATH',
                    'RUBY_VERSION', 'RAILS_ENV', 'NODE_ENV',
                    'XDG_STATE_HOME', 'XDG_DATA_HOME', 'XDG_CONFIG_HOME',
-                   'DEV_PORT', 'WORKTREE_DATABASE_SUFFIX').merge(target_mise_scope_env)
+                   'DEV_PORT', 'WORKTREE_DATABASE_SUFFIX',
+                   'PLAYWRIGHT_BROWSERS_PATH').merge(target_mise_scope_env)
   end
 
   def target_mise_scope_env
@@ -336,6 +339,147 @@ RSpec.describe Rails::Worktrees::PostCreateRunner do
         build_runner.call
 
         expect(commands).to eq([{ env: runner_env, command: %w[yarn install], chdir: target_dir }])
+      end
+    end
+
+    context 'with a playwright browser step' do
+      let(:playwright_command) { %w[yarn playwright install chromium] }
+
+      before do
+        configuration.run_playwright_install = true
+        File.write(File.join(target_dir, 'yarn.lock'), '')
+        write_package_json('devDependencies' => { 'playwright' => '1.61.1' })
+      end
+
+      def write_package_json(contents)
+        File.write(File.join(target_dir, 'package.json'), JSON.generate(contents))
+      end
+
+      def browsers_dir = File.join(tmpdir, 'ms-playwright')
+
+      def install_playwright_cli!
+        FileUtils.mkdir_p(File.join(target_dir, 'node_modules/.bin'))
+        File.write(File.join(target_dir, 'node_modules/.bin/playwright'), '')
+      end
+
+      def install_browser!(name)
+        FileUtils.mkdir_p(File.join(browsers_dir, name))
+        File.write(File.join(browsers_dir, name, 'INSTALLATION_COMPLETE'), '')
+      end
+
+      def dry_run_output(*names)
+        names.map do |name|
+          "Browser #{name}\n  Install location:    #{File.join(browsers_dir, name)}\n  Download url: https://example.test\n\n"
+        end.join
+      end
+
+      def stub_playwright_probe(output:, success: true)
+        status = instance_double(Process::Status, success?: success)
+        allow(Open3).to receive(:capture2e).and_call_original
+        allow(Open3).to receive(:capture2e)
+          .with(hash_including('PATH'), 'node_modules/.bin/playwright', 'install', '--dry-run', 'chromium',
+                chdir: target_dir)
+          .and_return([output, status])
+      end
+
+      it 'installs chromium when playwright is not installed in node_modules yet' do
+        commands = stub_popen2e_sequence(popen_result)
+
+        expect(build_runner.call).to eq(0)
+
+        expect_single_command(commands, env: runner_env, command: playwright_command)
+        expect(out).to include('Installing Playwright Chromium')
+      end
+
+      it 'does not download chromium again when the matching browser is already installed' do
+        install_playwright_cli!
+        install_browser!('chromium-1228')
+        install_browser!('chromium_headless_shell-1228')
+        stub_playwright_probe(output: dry_run_output('chromium-1228', 'chromium_headless_shell-1228'))
+        allow(Open3).to receive(:popen2e)
+
+        expect(build_runner.call).to eq(0)
+
+        expect(Open3).not_to have_received(:popen2e)
+        expect(out).to include('Playwright Chromium is already installed')
+      end
+
+      it 'installs chromium when a browser for the pinned playwright version is missing' do
+        install_playwright_cli!
+        install_browser!('chromium-1208')
+        install_browser!('chromium_headless_shell-1208')
+        stub_playwright_probe(output: dry_run_output('chromium-1228', 'chromium_headless_shell-1228'))
+        commands = stub_popen2e_sequence(popen_result)
+
+        expect(build_runner.call).to eq(0)
+
+        expect_single_command(commands, env: runner_env, command: playwright_command)
+      end
+
+      it 'installs chromium when a browser download was left incomplete' do
+        install_playwright_cli!
+        install_browser!('chromium-1228')
+        FileUtils.mkdir_p(File.join(browsers_dir, 'chromium_headless_shell-1228'))
+        stub_playwright_probe(output: dry_run_output('chromium-1228', 'chromium_headless_shell-1228'))
+        commands = stub_popen2e_sequence(popen_result)
+
+        expect(build_runner.call).to eq(0)
+
+        expect_single_command(commands, env: runner_env, command: playwright_command)
+      end
+
+      it 'installs chromium when the installed state cannot be determined' do
+        install_playwright_cli!
+        stub_playwright_probe(output: 'error: unknown option', success: false)
+        commands = stub_popen2e_sequence(popen_result)
+
+        expect(build_runner.call).to eq(0)
+
+        expect_single_command(commands, env: runner_env, command: playwright_command)
+      end
+
+      it 'shows the browser install in a dry run when it is needed' do
+        install_playwright_cli!
+        stub_playwright_probe(output: dry_run_output('chromium-1228'))
+        allow(Open3).to receive(:popen2e)
+
+        expect(build_runner.call(dry_run: true)).to eq(0)
+
+        expect(out).to include('Would run: yarn playwright install chromium')
+        expect(Open3).not_to have_received(:popen2e)
+      end
+
+      it 'shows the skipped browser install in a dry run when chromium is already installed' do
+        install_playwright_cli!
+        install_browser!('chromium-1228')
+        stub_playwright_probe(output: dry_run_output('chromium-1228'))
+        allow(Open3).to receive(:popen2e)
+
+        expect(build_runner.call(dry_run: true)).to eq(0)
+
+        expect(out).to include('Playwright Chromium is already installed')
+        expect(out).not_to include('Would run: yarn playwright install chromium')
+      end
+
+      it 'passes a custom PLAYWRIGHT_BROWSERS_PATH to the browser install' do
+        commands = stub_popen2e_sequence(popen_result)
+        original = ENV.fetch('PLAYWRIGHT_BROWSERS_PATH', nil)
+        ENV['PLAYWRIGHT_BROWSERS_PATH'] = browsers_dir
+
+        build_runner.call
+
+        expect(commands.first[:env]).to include('PLAYWRIGHT_BROWSERS_PATH' => browsers_dir)
+      ensure
+        ENV['PLAYWRIGHT_BROWSERS_PATH'] = original
+      end
+
+      it 'skips the browser install when the app does not depend on playwright' do
+        write_package_json('devDependencies' => { 'esbuild' => '0.25.0' })
+        allow(Open3).to receive(:popen2e)
+
+        expect(build_runner.call).to eq(0)
+
+        expect(Open3).not_to have_received(:popen2e)
       end
     end
 

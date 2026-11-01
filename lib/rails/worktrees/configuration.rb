@@ -14,6 +14,7 @@ module Rails
         post_create_command
         run_bundle_install
         run_yarn_install
+        run_playwright_install
         run_db_prepare
         run_test_db_prepare
         run_test_assets_precompile
@@ -37,7 +38,7 @@ module Rails
                     :name_sources_path, :used_names_file, :workspace_root, :worktrees_dir,
                     :worktree_database_suffix_max_length,
                     :post_create_command,
-                    :run_bundle_install, :run_yarn_install,
+                    :run_bundle_install, :run_yarn_install, :run_playwright_install,
                     :run_db_prepare, :run_test_db_prepare, :run_test_assets_precompile,
                     :link_credential_keys, :link_test_credential_key, :link_production_credential_key
 
@@ -64,6 +65,7 @@ module Rails
         @post_create_command = nil
         @run_bundle_install = true
         @run_yarn_install = true
+        @run_playwright_install = true
         @run_db_prepare = true
         @run_test_db_prepare = true
         @run_test_assets_precompile = true
