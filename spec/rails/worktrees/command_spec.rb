@@ -935,6 +935,18 @@ RSpec.describe Rails::Worktrees::Command do
         expect(info_exclude).to eq("*.swp\n/.worktrees/\n")
       end
 
+      it 'escapes ignore-pattern metacharacters so only the literal directory is excluded' do
+        configuration.worktrees_dir = 'worktrees[local]*'
+
+        expect(build_command(argv: ['feature-one']).run).to eq(0)
+
+        expect(info_exclude.lines.map(&:chomp)).to include('/worktrees\[local\]\*/')
+        expect(main_checkout_status).to eq('')
+
+        write_repo_file('worktreesl-unrelated/notes.txt', "keep visible\n")
+        expect(main_checkout_status).to eq('?? worktreesl-unrelated/notes.txt')
+      end
+
       it 'adds the exclude entry only once' do
         build_command(argv: ['feature-one']).run
         build_command(argv: ['feature-two']).run

@@ -25,7 +25,13 @@ module Rails
           git_success?('-C', primary_root, 'check-ignore', '-q', "#{workspaces[:relative_dir]}/")
         end
 
-        def worktrees_dir_exclude_entry(workspaces) = "/#{workspaces[:relative_dir]}/"
+        # Escapes gitignore metacharacters so the entry matches only the literal directory.
+        def worktrees_dir_exclude_entry(workspaces)
+          escaped = workspaces[:relative_dir]
+                    .gsub(/[\\*?\[\]]/) { |char| "\\#{char}" }
+                    .sub(/ +\z/) { |spaces| spaces.gsub(' ', '\ ') }
+          "/#{escaped}/"
+        end
 
         def info_exclude_path(primary_root)
           git_path = git_capture('-C', primary_root, 'rev-parse', '--git-path', 'info/exclude').strip
