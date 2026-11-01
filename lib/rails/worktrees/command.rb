@@ -15,7 +15,9 @@ module Rails
       DOCTOR_SUBCOMMAND = 'doctor'.freeze
       SETUP_SUBCOMMAND = 'setup'.freeze
       UPDATE_SUBCOMMAND = 'update'.freeze
-      PI_FLAG_EXEMPT_META_COMMANDS = %w[-h --help -v --version].freeze
+      PI_FLAG_EXEMPT_META_COMMANDS = %w[-h --help help -v --version version].freeze
+      # Command words that wt never treats as a worktree name.
+      RESERVED_WORDS = %w[help version doctor setup update prune remove delete].freeze
 
       include GitOperations
       include EnvironmentSupport

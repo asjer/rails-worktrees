@@ -112,6 +112,48 @@ RSpec.describe Rails::Worktrees::Command do
       expect(out.string).to include('Worktree ready')
     end
 
+    it 'shows help for wt help without creating a worktree, branch, or .env' do
+      out = StringIO.new
+
+      expect(build_command(argv: ['help'], stdout: out).run).to eq(0)
+
+      expect(out.string).to include('Usage: wt [worktree-name]')
+      expect(File.exist?(File.join(configuration.workspace_root, 'app', 'help'))).to be(false)
+      expect(git_output('-C', repo_path, 'branch', '--list', "#{configuration.branch_prefix}/help")).to eq('')
+    end
+
+    it 'shows the version for wt version without creating a worktree or branch' do
+      out = StringIO.new
+
+      expect(build_command(argv: ['version'], stdout: out).run).to eq(0)
+
+      expect(out.string).to eq("wt #{Rails::Worktrees::VERSION}\n")
+      expect(File.exist?(File.join(configuration.workspace_root, 'app', 'version'))).to be(false)
+      expect(git_output('-C', repo_path, 'branch', '--list', "#{configuration.branch_prefix}/version")).to eq('')
+    end
+
+    it 'never creates a worktree or branch for a reserved word' do
+      %w[help version doctor setup update prune remove delete].each do |word|
+        out = StringIO.new
+        err = StringIO.new
+
+        build_command(argv: ['--dry-run', word], stdout: out, stderr: err).run
+
+        expect(out.string + err.string).not_to include("Would create '#{configuration.branch_prefix}/#{word}'"), word
+        expect(File.exist?(File.join(configuration.workspace_root, 'app', word))).to be(false), word
+      end
+    end
+
+    it 'lists the reserved words in the help text' do
+      out = StringIO.new
+
+      build_command(argv: ['--help'], stdout: out).run
+
+      expect(out.string).to include(
+        'reserved words are never used as worktree names: help, version, doctor, setup, update, prune, remove, delete'
+      )
+    end
+
     it 'prints derived env values without creating a worktree' do
       out = StringIO.new
 

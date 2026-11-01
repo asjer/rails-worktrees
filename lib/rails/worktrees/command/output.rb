@@ -8,10 +8,10 @@ module Rails
 
         def handle_meta_command
           case @argv.first
-          when '-h', '--help'
+          when '-h', '--help', 'help'
             @stdout.print(usage)
             0
-          when '-v', '--version'
+          when '-v', '--version', 'version'
             @stdout.puts("wt #{Rails::Worktrees::VERSION}")
             0
           when '--env', '--print-env'
@@ -30,6 +30,7 @@ module Rails
             Create and clean up Git worktrees for the current repository.
 
             Usage: wt [worktree-name]
+                   wt help | wt version
                    wt [--skip-setup] [worktree-name]
                    wt --dry-run [worktree-name]
                    wt --print-env <worktree-name>
@@ -41,8 +42,8 @@ module Rails
                    wt prune [--dry-run]
 
             Options:
-              -h, --help                  Show this help message
-              -v, --version               Show the script version
+              -h, --help, help            Show this help message
+              -v, --version, version      Show the script version
               --dry-run [name]            Preview worktree creation or cleanup without changing anything
               --skip-setup               Create the worktree without running setup steps
               --force                     Delete an unmerged local branch with wt remove/delete
@@ -67,6 +68,7 @@ module Rails
             How it works:
               - by default creates worktrees beside the repo in ../<project>.worktrees/<name>
               - when workspace_root or WT_WORKSPACES_ROOT is set, creates worktrees in <root>/<project>/<name>
+              - reserved words are never used as worktree names: #{RESERVED_WORDS.join(', ')}
               - always uses the branch name #{@configuration.branch_prefix}/<name>
               - bases new branches on the repository's origin default branch
               - by default wt <name> both creates the worktree and runs setup automatically
