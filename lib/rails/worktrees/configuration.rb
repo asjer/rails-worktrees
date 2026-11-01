@@ -5,6 +5,7 @@ module Rails
       CONFIGURABLE_ATTRIBUTES = %i[
         bootstrap_env
         workspace_root
+        worktrees_dir
         dev_port_range
         branch_prefix
         name_sources_path
@@ -33,7 +34,7 @@ module Rails
       DEFAULT_WORKTREE_DATABASE_SUFFIX_MAX_LENGTH = 18
 
       attr_accessor :bootstrap_env, :branch_prefix, :dev_port_range, :legacy_used_names_files,
-                    :name_sources_path, :used_names_file, :workspace_root,
+                    :name_sources_path, :used_names_file, :workspace_root, :worktrees_dir,
                     :worktree_database_suffix_max_length,
                     :post_create_command,
                     :run_bundle_install, :run_yarn_install,
@@ -50,6 +51,7 @@ module Rails
       def assign_core_defaults
         @bootstrap_env = DEFAULT_BOOTSTRAP_ENV
         @workspace_root = nil
+        @worktrees_dir = nil
         @branch_prefix = DEFAULT_BRANCH_PREFIX
         @dev_port_range = DEFAULT_DEV_PORT_RANGE
         @name_sources_path = DEFAULT_NAME_SOURCES_PATH

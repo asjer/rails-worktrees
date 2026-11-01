@@ -8,6 +8,7 @@ module Rails
     class Configuration
       attr_accessor bootstrap_env: bool
       attr_accessor workspace_root: String?
+      attr_accessor worktrees_dir: String?
       attr_accessor branch_prefix: String
       attr_accessor dev_port_range: ::Range[Integer]
       attr_accessor name_sources_path: String

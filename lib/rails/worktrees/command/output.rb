@@ -68,6 +68,7 @@ module Rails
             How it works:
               - by default creates worktrees beside the repo in ../<project>.worktrees/<name>
               - when workspace_root or WT_WORKSPACES_ROOT is set, creates worktrees in <root>/<project>/<name>
+              - when worktrees_dir is set (for example '.worktrees'), creates worktrees inside the main checkout in <repo>/<worktrees_dir>/<name>
               - reserved words are commands, never new worktree names: #{RESERVED_WORDS.join(', ')}
               - always uses the branch name #{@configuration.branch_prefix}/<name>
               - bases new branches on the repository's origin default branch

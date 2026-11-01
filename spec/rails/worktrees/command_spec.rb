@@ -866,6 +866,184 @@ RSpec.describe Rails::Worktrees::Command do
         expect(git_output('-C', target_dir, 'branch', '--show-current')).to eq('🚂/feature-one')
         expect(out.string).not_to include('Root:')
       end
+
+      it 'does not touch .git/info/exclude' do
+        exclude_path = File.join(repo_path, '.git', 'info', 'exclude')
+        exclude_before = File.exist?(exclude_path) ? File.read(exclude_path) : nil
+
+        expect(build_command(argv: ['feature-one']).run).to eq(0)
+
+        expect(File.exist?(exclude_path) ? File.read(exclude_path) : nil).to eq(exclude_before)
+      end
+    end
+
+    context 'with an in-repo worktrees_dir' do
+      let(:workspace_root_override) { nil }
+      let(:in_repo_root) { File.join(repo_path, '.worktrees') }
+
+      before { configuration.worktrees_dir = '.worktrees' }
+
+      def info_exclude = File.read(File.join(repo_path, '.git', 'info', 'exclude'))
+
+      def main_checkout_status = git_output('-C', repo_path, 'status', '--porcelain', '--untracked-files=all')
+
+      it 'creates worktrees inside the main checkout' do
+        out = StringIO.new
+
+        expect(build_command(argv: ['feature-one'], stdout: out).run).to eq(0)
+
+        target_dir = File.join(in_repo_root, 'feature-one')
+        expect(File.directory?(target_dir)).to be(true)
+        expect(git_output('-C', target_dir, 'branch', '--show-current')).to eq('🚂/feature-one')
+        expect(out.string).to include("Root:   #{in_repo_root}")
+        expect(out.string).to include("Path:   #{target_dir}")
+      end
+
+      it 'creates the same layout when run from inside an in-repo worktree' do
+        build_command(argv: ['runner']).run
+
+        expect(build_command(argv: ['feature-one'], cwd: File.join(in_repo_root, 'runner')).run).to eq(0)
+
+        expect(File.directory?(File.join(in_repo_root, 'feature-one'))).to be(true)
+        expect(File.exist?(File.join(in_repo_root, 'runner', '.worktrees'))).to be(false)
+      end
+
+      it 'supports a nested relative worktrees_dir' do
+        configuration.worktrees_dir = 'tmp/worktrees/'
+
+        expect(build_command(argv: ['feature-one']).run).to eq(0)
+
+        expect(File.directory?(File.join(repo_path, 'tmp', 'worktrees', 'feature-one'))).to be(true)
+        expect(info_exclude).to include("/tmp/worktrees/\n")
+      end
+
+      it 'adds the directory to .git/info/exclude so the main checkout stays clean' do
+        out = StringIO.new
+
+        expect(build_command(argv: ['feature-one'], stdout: out).run).to eq(0)
+
+        expect(info_exclude.lines.map(&:chomp)).to include('/.worktrees/')
+        expect(main_checkout_status).to eq('')
+        expect(out.string).to include("Added '/.worktrees/' to")
+      end
+
+      it 'adds the exclude entry only once' do
+        build_command(argv: ['feature-one']).run
+        build_command(argv: ['feature-two']).run
+
+        expect(info_exclude.lines.count { |line| line.chomp == '/.worktrees/' }).to eq(1)
+      end
+
+      it 'leaves .git/info/exclude alone when .gitignore already ignores the directory' do
+        write_repo_file('.gitignore', ".worktrees/\n")
+        git!('-C', repo_path, 'add', '.gitignore')
+        git!('-C', repo_path, 'commit', '-m', 'Ignore worktrees')
+        exclude_before = info_exclude
+
+        expect(build_command(argv: ['feature-one']).run).to eq(0)
+
+        expect(info_exclude).to eq(exclude_before)
+        expect(main_checkout_status).to eq('')
+      end
+
+      it 'previews the exclude entry during a dry run without writing it' do
+        out = StringIO.new
+        exclude_before = info_exclude
+
+        expect(build_command(argv: ['--dry-run', 'feature-one'], stdout: out).run).to eq(0)
+
+        expect(info_exclude).to eq(exclude_before)
+        expect(File.exist?(in_repo_root)).to be(false)
+        expect(out.string).to include("Would add '/.worktrees/' to")
+      end
+
+      it 'warns instead of failing when .git/info/exclude cannot be written' do
+        err = StringIO.new
+        command = build_command(argv: ['feature-one'], stderr: err)
+        allow(File).to receive(:open).and_call_original
+        allow(File).to receive(:open).with(end_with('info/exclude'), 'a').and_raise(Errno::EACCES)
+
+        expect(command.run).to eq(0)
+
+        expect(File.directory?(File.join(in_repo_root, 'feature-one'))).to be(true)
+        expect(err.string).to include("add '/.worktrees/' to .gitignore")
+      end
+
+      it 'removes a merged in-repo worktree from the main checkout' do
+        build_command(argv: ['feature-one']).run
+        target_dir = File.join(in_repo_root, 'feature-one')
+        commit_in_worktree(target_dir, 'feature.txt', "hello\n")
+        merge_worktree_branch('🚂/feature-one')
+
+        expect(build_command(argv: %w[remove feature-one]).run).to eq(0)
+
+        expect(File.exist?(target_dir)).to be(false)
+        expect(local_branch_exists?('🚂/feature-one')).to be(false)
+      end
+
+      it 'lists merged in-repo worktrees in a prune dry run' do
+        build_command(argv: ['feature-one']).run
+        target_dir = File.join(in_repo_root, 'feature-one')
+        commit_in_worktree(target_dir, 'feature.txt', "hello\n")
+        merge_worktree_branch('🚂/feature-one')
+        out = StringIO.new
+
+        expect(build_command(argv: ['prune', '--dry-run'], stdout: out).run).to eq(0)
+
+        expect(out.string).to include("feature-one => #{target_dir} (🚂/feature-one)")
+        expect(out.string).to include('Would prune 1 merged worktree')
+        expect(File.directory?(target_dir)).to be(true)
+      end
+
+      it 'reports an ignored in-repo worktrees directory as healthy in wt doctor' do
+        install_worktrees_files
+        git!('-C', repo_path, 'add', '.')
+        git!('-C', repo_path, 'commit', '-m', 'Install worktrees')
+        build_command(argv: ['feature-one']).run
+        out = StringIO.new
+
+        expect(build_command(argv: ['doctor'], stdout: out).run).to eq(0)
+
+        expect(out.string).to include("In-repo worktrees directory #{in_repo_root} is ignored by Git.")
+      end
+
+      it 'warns in wt doctor when the in-repo worktrees directory is not ignored' do
+        install_worktrees_files
+        out = StringIO.new
+        err = StringIO.new
+
+        expect(build_command(argv: ['doctor'], stdout: out, stderr: err).run).to eq(1)
+
+        expect(out.string + err.string).to include("In-repo worktrees directory #{in_repo_root} is not ignored by Git.")
+      end
+
+      it 'rejects a worktrees_dir outside the repository' do
+        ['/tmp/worktrees', '../worktrees', '~/worktrees', '.', '.git/worktrees'].each do |value|
+          configuration.worktrees_dir = value
+          err = StringIO.new
+
+          expect(build_command(argv: ['feature-one'], stderr: err).run).to eq(1)
+          expect(err.string).to include('worktrees_dir must be a relative path inside the repository')
+        end
+      end
+
+      it 'rejects combining worktrees_dir with workspace_root' do
+        configuration.workspace_root = File.join(tmpdir, 'workspaces')
+        err = StringIO.new
+
+        expect(build_command(argv: ['feature-one'], stderr: err).run).to eq(1)
+
+        expect(err.string).to include('Set either workspace_root or worktrees_dir, not both.')
+      end
+
+      it 'lets WT_WORKSPACES_ROOT override worktrees_dir for a single run' do
+        explicit_root = File.join(tmpdir, 'env-root')
+
+        expect(build_command(argv: ['from-env'], env: { 'WT_WORKSPACES_ROOT' => explicit_root }).run).to eq(0)
+
+        expect(File.directory?(File.join(explicit_root, 'app', 'from-env'))).to be(true)
+        expect(File.exist?(in_repo_root)).to be(false)
+      end
     end
 
     context 'with post-create setup steps' do

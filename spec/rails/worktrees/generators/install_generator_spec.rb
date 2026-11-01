@@ -176,6 +176,13 @@ RSpec.describe Worktrees::Generators::InstallGenerator do
     expect(read_initializer).not_to include("config.workspace_root = File.expand_path('~/Sites/conductor/workspaces')")
   end
 
+  it 'documents the in-repo worktrees_dir layout in the initializer' do
+    run_generator
+
+    expect(read_initializer).to include("# config.worktrees_dir = '.worktrees'")
+    expect(read_initializer).to include("config.branch_prefix = 'worktree'")
+  end
+
   it 'creates a Procfile.dev example with the DEV_PORT-aware web entry' do
     run_generator
 
