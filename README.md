@@ -103,6 +103,32 @@ workspace/
 
 `WT_WORKSPACES_ROOT` or `config.workspace_root` overrides the destination root and uses the layout `<root>/<project>/<name>`.
 
+### Worktrees inside the repository
+
+Set `config.worktrees_dir` to keep worktrees inside the main checkout instead, in `<main checkout>/<worktrees_dir>/<name>`. This is the layout the [pi-worktree](https://www.npmjs.com/package/pi-worktree) extension uses, so `bin/wt` and Pi share one place for worktrees:
+
+```ruby
+Rails.application.config.x.rails_worktrees.tap do |config|
+  config.worktrees_dir = '.worktrees'
+  config.branch_prefix = 'worktree' # wt and pi-worktree both create worktree/<name>
+end
+```
+
+```text
+my-project/
+├── app/
+├── config/
+└── .worktrees/
+    ├── feature-auth/
+    └── bugfix-123/
+```
+
+- `worktrees_dir` must be a relative path inside the repository, such as `.worktrees` or `tmp/worktrees`. It always resolves against the main checkout, also when you run `bin/wt` from inside a worktree.
+- If `.gitignore` does not already ignore the directory, `bin/wt` adds `/.worktrees/` to `.git/info/exclude` when it creates a worktree, so `git status` in the main checkout stays clean. When it cannot write that file it prints a warning; add the directory to `.gitignore` yourself.
+- `bin/wt remove`, `bin/wt prune` and `bin/wt doctor` work in this layout too. `bin/wt doctor` warns when the directory is not ignored.
+- `worktrees_dir` cannot be combined with `workspace_root`. `WT_WORKSPACES_ROOT` still overrides both for a single run.
+- Tools that scan the main checkout's file tree (for example RuboCop, file watchers or Tailwind content globs) can pick up files from the worktrees. Exclude the directory there if needed.
+
 ### Setup command
 
 `bin/wt setup` reruns setup for the **current checkout**. Run it from inside a linked worktree created by `bin/wt`, a worktree created manually with `git worktree`, or a checkout prepared by another tool.
@@ -190,7 +216,7 @@ Both commands create or update `.pi/worktree.json`:
 }
 ```
 
-`.pi/worktree.json` is read by the [pi-worktree](https://www.npmjs.com/package/pi-worktree) npm extension (`pi install pi-worktree`), **not** by Pi core. Without that extension, the file has no effect. pi-worktree places worktrees in `.worktrees/` inside the repository by default, so add that directory to `.gitignore`.
+`.pi/worktree.json` is read by the [pi-worktree](https://www.npmjs.com/package/pi-worktree) npm extension (`pi install pi-worktree`), **not** by Pi core. Without that extension, the file has no effect. pi-worktree places worktrees in `.worktrees/` inside the repository by default. Set `config.worktrees_dir = '.worktrees'` and `config.branch_prefix = 'worktree'` to have `bin/wt` use the same directory and branch names; see [Worktrees inside the repository](#worktrees-inside-the-repository).
 
 `linkEnvFiles: false` matters. By default, pi-worktree symlinks the main checkout's gitignored `.env*` files into a new worktree before `postCreate` runs. `bin/wt setup` keeps existing `.env` values, so every Pi worktree would then reuse the main checkout's `DEV_PORT` and `WORKTREE_DATABASE_SUFFIX`, and setup would write through the symlink into the main checkout. With linking disabled, each worktree gets its own `.env` and database identity.
 
@@ -261,6 +287,7 @@ The initializer stays app-owned and gem-agnostic; `rails-worktrees` reads those 
 |--------|---------|-------------|
 | `bootstrap_env` | `true` | Write `.env` when creating a worktree |
 | `workspace_root` | `nil` | Override the destination root (sibling layout when `nil`) |
+| `worktrees_dir` | `nil` | Create worktrees inside the main checkout, e.g. `'.worktrees'`; see [Worktrees inside the repository](#worktrees-inside-the-repository) |
 | `dev_port_range` | `3000..3999` | Port range for deterministic `DEV_PORT` allocation |
 | `branch_prefix` | `🚂` | Prefix for worktree branch names |
 | `name_sources_path` | bundled `names/` | Directory containing `.txt` name lists |

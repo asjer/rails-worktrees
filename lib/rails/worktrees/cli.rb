@@ -3,6 +3,8 @@ module Rails
     # Shell entrypoint for the wt executable.
     class CLI
       LOADER_OPTIONAL_COMMANDS = %w[doctor update -h --help help -v --version version].freeze
+      # Commands that use project configuration when it loads, but must keep working when it does not.
+      LOADER_BEST_EFFORT_COMMANDS = %w[doctor].freeze
       LOADER_IGNORED_FLAGS = %w[--dry-run --force --skip-setup --pi].freeze
       SETUP_SUBCOMMAND = 'setup'.freeze
 
@@ -20,7 +22,11 @@ module Rails
 
       def start
         configuration = ::Rails::Worktrees.configuration
-        load_project_configuration(configuration) if should_load_project_configuration?
+        if should_load_project_configuration?
+          load_project_configuration(configuration)
+        elsif best_effort_configuration_command?
+          load_project_configuration_best_effort(configuration)
+        end
         command_for(configuration).run
       rescue ::Rails::Worktrees::Error => e
         @io.fetch(:stderr).puts("Error: #{e.message}")
@@ -33,6 +39,17 @@ module Rails
         ::Rails::Worktrees::ProjectConfigurationLoader.new(root: configuration_root, configuration: configuration).call
       rescue StandardError, ScriptError => e
         raise ::Rails::Worktrees::Error, "Failed to load worktrees configuration: #{e.class}: #{e.message}"
+      end
+
+      # A broken initializer must not block recovery; wt doctor then reports with default settings.
+      def load_project_configuration_best_effort(configuration)
+        load_project_configuration(configuration)
+      rescue ::Rails::Worktrees::Error
+        configuration
+      end
+
+      def best_effort_configuration_command?
+        LOADER_BEST_EFFORT_COMMANDS.include?(argv_without_flags.first)
       end
 
       def configuration_root

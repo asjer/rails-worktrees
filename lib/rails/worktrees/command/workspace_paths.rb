@@ -1,8 +1,11 @@
 module Rails
   module Worktrees
     class Command
-      # Resolves the default and explicit workspace path layouts.
+      # Resolves the sibling (default), workspace_root and in-repo worktrees_dir path layouts.
       module WorkspacePaths
+        INVALID_WORKTREES_DIR_MESSAGE =
+          "worktrees_dir must be a relative path inside the repository, like '.worktrees' (got %p).".freeze
+
         private
 
         def resolve_repository_context
@@ -41,9 +44,16 @@ module Rails
 
         def resolve_workspaces(repo_root, project_name)
           explicit_root = configured_workspaces_root
-          return { root: explicit_root, uses_default_root: false } if explicit_root
+          return { root: explicit_root, layout: :workspace_root, uses_default_root: false } if explicit_root
 
-          { root: File.join(File.dirname(repo_root), "#{project_name}.worktrees"), uses_default_root: true }
+          in_repo_dir = configured_worktrees_dir
+          if in_repo_dir
+            return { root: File.join(repo_root, in_repo_dir), layout: :in_repo, relative_dir: in_repo_dir,
+                     uses_default_root: false }
+          end
+
+          { root: File.join(File.dirname(repo_root), "#{project_name}.worktrees"), layout: :sibling,
+            uses_default_root: true }
         end
 
         def configured_workspaces_root
@@ -51,16 +61,37 @@ module Rails
           return expand_home(env_root) if present_path?(env_root)
 
           config_root = @configuration.workspace_root
-          return expand_home(config_root) if present_path?(config_root)
+          return unless present_path?(config_root)
 
-          nil
+          if present_path?(@configuration.worktrees_dir)
+            raise Error, 'Set either workspace_root or worktrees_dir, not both.'
+          end
+
+          expand_home(config_root)
+        end
+
+        def configured_worktrees_dir
+          value = @configuration.worktrees_dir
+          return unless present_path?(value)
+
+          normalized = Pathname(value.to_s).cleanpath
+          raise Error, format(INVALID_WORKTREES_DIR_MESSAGE, value) unless valid_worktrees_dir?(normalized)
+
+          normalized.to_s
+        end
+
+        def valid_worktrees_dir?(path)
+          first_component = path.each_filename.first
+
+          path.relative? && !path.to_s.start_with?('~') &&
+            !path.each_filename.include?('..') && !['.', '.git'].include?(first_component)
         end
 
         def target_dir_for(project_name, worktree_name, workspaces)
-          if workspaces[:uses_default_root]
-            File.join(workspaces[:root], worktree_name)
-          else
+          if workspaces[:layout] == :workspace_root
             File.join(workspaces[:root], project_name, worktree_name)
+          else
+            File.join(workspaces[:root], worktree_name)
           end
         end
 
@@ -85,7 +116,7 @@ module Rails
         end
 
         def present_path?(path)
-          !path.nil? && !path.empty?
+          !path.nil? && !path.to_s.empty?
         end
 
         def expand_home(path)
