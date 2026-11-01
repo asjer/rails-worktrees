@@ -5,6 +5,13 @@ Rails.application.config.x.rails_worktrees.tap do |config|
   # By default, worktrees go in a sibling "<project>.worktrees" directory.
   # Uncomment to override with a custom parent directory that uses <root>/<project>/<name>.
   # config.workspace_root = File.expand_path('~/worktrees')
+  #
+  # Or keep worktrees inside this checkout in <app>/.worktrees/<name>, like Pi's pi-worktree
+  # extension. wt adds the directory to .git/info/exclude unless .gitignore already covers it.
+  # Combine with branch_prefix 'worktree' so wt and Pi share worktree/<name> branch names.
+  # Cannot be combined with workspace_root.
+  # config.worktrees_dir = '.worktrees'
+  # config.branch_prefix = 'worktree'
 <% end -%>
   # config.bootstrap_env = false
   # config.dev_port_range = 3000..3999

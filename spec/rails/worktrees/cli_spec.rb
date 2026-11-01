@@ -73,6 +73,24 @@ RSpec.describe Rails::Worktrees::CLI do
     expect(Rails::Worktrees::Command).to have_received(:new)
   end
 
+  it 'loads project configuration for wt doctor when the initializer is valid' do
+    write_initializer(<<~RUBY)
+      Rails.application.config.x.rails_worktrees.tap do |config|
+        config.worktrees_dir = '.worktrees'
+      end
+    RUBY
+
+    fake_command = instance_spy(Rails::Worktrees::Command, run: 0)
+
+    allow(Rails::Worktrees::Command).to receive(:new) do |**kwargs|
+      expect(kwargs.fetch(:configuration).worktrees_dir).to eq('.worktrees')
+      fake_command
+    end
+
+    expect(described_class.new(argv: ['doctor'], io: io, cwd: tmpdir).start).to eq(0)
+    expect(Rails::Worktrees::Command).to have_received(:new)
+  end
+
   it 'prints a friendly error when a config-dependent command cannot load the initializer' do
     write_initializer(<<~RUBY)
       Rails.application.config.x.rails_worktrees.tap do |config|

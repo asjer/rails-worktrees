@@ -1,6 +1,7 @@
 require 'fileutils'
 require_relative 'command/environment_support'
 require_relative 'command/git_operations'
+require_relative 'command/in_repo_worktrees'
 require_relative 'command/name_picking'
 require_relative 'command/output'
 require_relative 'command/post_create_support'
@@ -19,6 +20,7 @@ module Rails
 
       include GitOperations
       include EnvironmentSupport
+      include InRepoWorktrees
       include NamePicking
       include Output
       include PostCreateSupport
@@ -135,9 +137,14 @@ module Rails
           confirm_and_remove_target(context[:target_dir])
         end
 
-        prepare_target_parent(context[:target_dir])
+        prepare_worktree_location(context)
         attach_or_create_worktree(context)
         finish(context)
+      end
+
+      def prepare_worktree_location(context)
+        ensure_worktrees_dir_ignored(context)
+        prepare_target_parent(context[:target_dir])
       end
 
       def execute_setup_command
@@ -212,8 +219,8 @@ module Rails
           return 1
         end
 
-        repository = resolve_repository_context
-        checks = project_maintenance_report(repository[:current_root]).checks + doctor_worktree_checks(repository)
+        current_root = canonical_path(git_capture('rev-parse', '--show-toplevel').strip)
+        checks = project_maintenance_report(current_root).checks + doctor_worktree_checks(current_root)
         print_doctor_report(checks)
 
         checks.any? { |check| check.fixable? || check.warning? } ? 1 : 0
@@ -653,16 +660,23 @@ module Rails
         ::Rails::Worktrees::ProjectMaintenance.new(root: root, pi_worktree: pi?).call
       end
 
-      def doctor_worktree_checks(repository)
+      def doctor_worktree_checks(current_root)
         [
           doctor_check(
             category: :git,
             status: :ok,
-            headline: "Git repository detected at #{repository[:current_root]}."
+            headline: "Git repository detected at #{current_root}."
           ),
           default_branch_doctor_check,
-          stale_worktree_doctor_check
-        ]
+          stale_worktree_doctor_check,
+          worktree_layout_doctor_check
+        ].compact
+      end
+
+      def worktree_layout_doctor_check
+        in_repo_worktrees_doctor_check(resolve_repository_context)
+      rescue Error => e
+        doctor_check(category: :worktree, status: :warning, headline: e.message)
       end
 
       def default_branch_doctor_check
