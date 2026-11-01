@@ -927,6 +927,14 @@ RSpec.describe Rails::Worktrees::Command do
         expect(out.string).to include("Added '/.worktrees/' to")
       end
 
+      it 'starts the exclude entry on its own line when the file lacks a trailing newline' do
+        File.write(File.join(repo_path, '.git', 'info', 'exclude'), '*.swp')
+
+        expect(build_command(argv: ['feature-one']).run).to eq(0)
+
+        expect(info_exclude).to eq("*.swp\n/.worktrees/\n")
+      end
+
       it 'adds the exclude entry only once' do
         build_command(argv: ['feature-one']).run
         build_command(argv: ['feature-two']).run
