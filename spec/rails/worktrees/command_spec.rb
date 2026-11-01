@@ -132,16 +132,24 @@ RSpec.describe Rails::Worktrees::Command do
       expect(git_output('-C', repo_path, 'branch', '--list', "#{configuration.branch_prefix}/version")).to eq('')
     end
 
-    it 'never creates a worktree or branch for a reserved word' do
+    it 'never routes a reserved word to worktree creation' do
       %w[help version doctor setup update prune remove delete].each do |word|
-        out = StringIO.new
-        err = StringIO.new
+        command = build_command(argv: ['--dry-run', word])
+        allow(command).to receive(:execute_worktree_command)
 
-        build_command(argv: ['--dry-run', word], stdout: out, stderr: err).run
+        command.run
 
-        expect(out.string + err.string).not_to include("Would create '#{configuration.branch_prefix}/#{word}'"), word
-        expect(File.exist?(File.join(configuration.workspace_root, 'app', word))).to be(false), word
+        expect(command).not_to have_received(:execute_worktree_command), word
       end
+    end
+
+    it 'never auto-picks a reserved word from a name list' do
+      File.write(File.join(configuration.name_sources_path, 'cities.txt'), "help\nversion\n")
+      err = StringIO.new
+
+      expect(build_command(argv: ['--dry-run'], stderr: err).run).to eq(1)
+
+      expect(err.string).to include('No unused names are available')
     end
 
     it 'lists the reserved words in the help text' do
@@ -150,7 +158,8 @@ RSpec.describe Rails::Worktrees::Command do
       build_command(argv: ['--help'], stdout: out).run
 
       expect(out.string).to include(
-        'reserved words are never used as worktree names: help, version, doctor, setup, update, prune, remove, delete'
+        'reserved words are commands, never new worktree names: ' \
+        'help, version, doctor, setup, update, prune, remove, delete'
       )
     end
 

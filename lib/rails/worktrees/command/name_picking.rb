@@ -45,7 +45,8 @@ module Rails
 
         def list_available_names(source_file, project_name, workspaces)
           source_names(source_file).select do |candidate|
-            valid_auto_name?(candidate) && available_for_auto_pick?(candidate, project_name, workspaces)
+            !RESERVED_WORDS.include?(candidate) && valid_auto_name?(candidate) &&
+              available_for_auto_pick?(candidate, project_name, workspaces)
           end
         end
 

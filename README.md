@@ -249,7 +249,7 @@ New installs and repaired apps use a bash bootstrap wrapper that activates mise 
 
 Worktree names must not contain `/` or whitespace, must not be `.` or `..`, and must be a valid Git ref component.
 
-These reserved words are commands and are never used as worktree names: `help`, `version`, `doctor`, `setup`, `update`, `prune`, `remove` and `delete`. `bin/wt help` and `bin/wt version` behave like `--help` and `--version`.
+These reserved words are commands, so `bin/wt <word>` never creates or reuses a worktree with that name and auto-picking skips them: `help`, `version`, `doctor`, `setup`, `update`, `prune`, `remove` and `delete`. `bin/wt help` and `bin/wt version` behave like `--help` and `--version`. An existing worktree with such a name (for example one created by `bin/wt help` in an older version) can still be cleaned up with `bin/wt remove help` or set up with `bin/wt setup ../<project>.worktrees/help`.
 
 ### Configuration
 

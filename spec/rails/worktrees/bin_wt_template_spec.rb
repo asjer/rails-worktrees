@@ -310,6 +310,19 @@ RSpec.describe 'generated bin/wt template' do
     expect(stdout).to include('Would update .pi/worktree.json')
   end
 
+  it 'treats wt help like --help when the app bundle is incomplete' do
+    install_bootstrap_fallback_test_app
+
+    stdout, stderr, status = run_wt(
+      { 'GEM_HOME' => fallback_gem_home, 'GEM_PATH' => fallback_gem_home },
+      %w[help extra-arg]
+    )
+
+    expect(status).to be_success, stderr
+    expect(stderr).to include('falling back to the globally installed wt executable')
+    expect(stdout).to include('Usage: wt [worktree-name]')
+  end
+
   it 'prints a clear incomplete-bundle error for non-bootstrap commands' do
     install_bootstrap_fallback_test_app
 

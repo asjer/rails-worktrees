@@ -77,7 +77,7 @@ exec ruby /dev/fd/3 "$@" 3<<'RUBY'
 def rails_worktrees_bootstrap_safe_invocation?(argv)
   args = argv.map(&:to_s)
   return true if args.empty?
-  return true if %w[-h --help -v --version].include?(args.first)
+  return true if %w[-h --help help -v --version version].include?(args.first)
   return true if %w[--env --print-env].include?(args.first)
 
   command_args = args.reject { |arg| %w[--dry-run --skip-setup --pi --env --print-env].include?(arg) }
