@@ -112,6 +112,57 @@ RSpec.describe Rails::Worktrees::Command do
       expect(out.string).to include('Worktree ready')
     end
 
+    it 'shows help for wt help without creating a worktree, branch, or .env' do
+      out = StringIO.new
+
+      expect(build_command(argv: ['help'], stdout: out).run).to eq(0)
+
+      expect(out.string).to include('Usage: wt [worktree-name]')
+      expect(File.exist?(File.join(configuration.workspace_root, 'app', 'help'))).to be(false)
+      expect(git_output('-C', repo_path, 'branch', '--list', "#{configuration.branch_prefix}/help")).to eq('')
+    end
+
+    it 'shows the version for wt version without creating a worktree or branch' do
+      out = StringIO.new
+
+      expect(build_command(argv: ['version'], stdout: out).run).to eq(0)
+
+      expect(out.string).to eq("wt #{Rails::Worktrees::VERSION}\n")
+      expect(File.exist?(File.join(configuration.workspace_root, 'app', 'version'))).to be(false)
+      expect(git_output('-C', repo_path, 'branch', '--list', "#{configuration.branch_prefix}/version")).to eq('')
+    end
+
+    it 'never routes a reserved word to worktree creation' do
+      %w[help version doctor setup update prune remove delete].each do |word|
+        command = build_command(argv: ['--dry-run', word])
+        allow(command).to receive(:execute_worktree_command)
+
+        command.run
+
+        expect(command).not_to have_received(:execute_worktree_command), word
+      end
+    end
+
+    it 'never auto-picks a reserved word from a name list' do
+      File.write(File.join(configuration.name_sources_path, 'cities.txt'), "help\nversion\n")
+      err = StringIO.new
+
+      expect(build_command(argv: ['--dry-run'], stderr: err).run).to eq(1)
+
+      expect(err.string).to include('No unused names are available')
+    end
+
+    it 'lists the reserved words in the help text' do
+      out = StringIO.new
+
+      build_command(argv: ['--help'], stdout: out).run
+
+      expect(out.string).to include(
+        'reserved words are commands, never new worktree names: ' \
+        'help, version, doctor, setup, update, prune, remove, delete'
+      )
+    end
+
     it 'prints derived env values without creating a worktree' do
       out = StringIO.new
 

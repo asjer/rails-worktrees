@@ -2,7 +2,7 @@ module Rails
   module Worktrees
     # Shell entrypoint for the wt executable.
     class CLI
-      LOADER_OPTIONAL_COMMANDS = %w[doctor update -h --help -v --version].freeze
+      LOADER_OPTIONAL_COMMANDS = %w[doctor update -h --help help -v --version version].freeze
       LOADER_IGNORED_FLAGS = %w[--dry-run --force --skip-setup --pi].freeze
       SETUP_SUBCOMMAND = 'setup'.freeze
 

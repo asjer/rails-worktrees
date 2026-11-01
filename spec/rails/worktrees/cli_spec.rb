@@ -73,6 +73,24 @@ RSpec.describe Rails::Worktrees::CLI do
     expect(Rails::Worktrees::Command).to have_received(:new)
   end
 
+  it 'shows help and version for the reserved words even when the initializer is broken' do
+    write_initializer(<<~RUBY)
+      Rails.application.config.x.rails_worktrees.tap do |config|
+        config.branch_prefix =
+      end
+    RUBY
+
+    help_io = { stdin: StringIO.new, stdout: StringIO.new, stderr: StringIO.new }
+    version_io = { stdin: StringIO.new, stdout: StringIO.new, stderr: StringIO.new }
+
+    expect(described_class.new(argv: ['help'], io: help_io, cwd: tmpdir).start).to eq(0)
+    expect(described_class.new(argv: ['version'], io: version_io, cwd: tmpdir).start).to eq(0)
+
+    expect(help_io.fetch(:stdout).string).to include('Usage: wt [worktree-name]')
+    expect(version_io.fetch(:stdout).string).to eq("wt #{Rails::Worktrees::VERSION}\n")
+    expect(help_io.fetch(:stderr).string + version_io.fetch(:stderr).string).to eq('')
+  end
+
   it 'prints a friendly error when a config-dependent command cannot load the initializer' do
     write_initializer(<<~RUBY)
       Rails.application.config.x.rails_worktrees.tap do |config|

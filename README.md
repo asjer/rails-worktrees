@@ -59,6 +59,8 @@ bin/wt remove my-feature        # remove a worktree and delete its local branch
 bin/wt delete my-feature        # alias for `bin/wt remove`
 bin/wt remove --force my-feature # also delete an unmerged local branch
 bin/wt prune                    # remove merged worktrees created by wt
+bin/wt help                     # same as --help; never creates a worktree
+bin/wt version                  # same as --version
 
 bin/ob                          # open http://localhost:$DEV_PORT/
 bin/ob contact                  # open http://localhost:$DEV_PORT/contact
@@ -70,8 +72,8 @@ bin/ob --print-url '?from=nav'  # print the resolved URL without opening a brows
 
 | Flag | Description |
 |------|-------------|
-| `-h`, `--help` | Show the help message |
-| `-v`, `--version` | Show the script version |
+| `-h`, `--help`, `help` | Show the help message |
+| `-v`, `--version`, `version` | Show the script version |
 | `--dry-run [name]` | Preview worktree creation or cleanup without changing anything |
 | `--skip-setup` | Create a worktree without running setup steps |
 | `--force` | Force branch deletion for `bin/wt remove` / `bin/wt delete` |
@@ -246,6 +248,8 @@ New installs and repaired apps use a bash bootstrap wrapper that activates mise 
 ### Name validation
 
 Worktree names must not contain `/` or whitespace, must not be `.` or `..`, and must be a valid Git ref component.
+
+These reserved words are commands, so `bin/wt <word>` never creates or reuses a worktree with that name and auto-picking skips them: `help`, `version`, `doctor`, `setup`, `update`, `prune`, `remove` and `delete`. `bin/wt help` and `bin/wt version` behave like `--help` and `--version`. An existing worktree with such a name (for example one created by `bin/wt help` in an older version) can still be cleaned up with `bin/wt remove help` or set up with `bin/wt setup ../<project>.worktrees/help`.
 
 ### Configuration
 
