@@ -55,7 +55,9 @@ bin/wt doctor                   # audit install/config drift and basic worktree 
 bin/wt update --dry-run         # preview safe maintenance fixes
 bin/wt update                   # apply safe maintenance fixes for managed files
 bin/wt update --pi              # also add the pi-worktree hook in .pi/worktree.json
-bin/wt remove my-feature        # remove a worktree and delete its local branch
+bin/wt teardown --dry-run       # preview this worktree's Overmind and development/test databases
+bin/wt teardown                 # stop Overmind and drop worktree databases; keep checkout/branch
+bin/wt remove my-feature        # teardown a worktree, remove it and delete its local branch
 bin/wt delete my-feature        # alias for `bin/wt remove`
 bin/wt remove --force my-feature # also delete an unmerged local branch
 bin/wt prune                    # remove merged worktrees created by wt
@@ -159,7 +161,8 @@ bin/wt setup
 
 `bin/wt` also supports cleanup commands for worktrees it manages:
 
-- `bin/wt remove <name>` — remove the named worktree and delete its local branch
+- `bin/wt teardown` — stop the current worktree's Overmind and drop its development/test databases, keeping the checkout and branch
+- `bin/wt remove <name>` — run the same teardown, remove the named worktree and delete its local branch
 - `bin/wt delete <name>` — alias for `bin/wt remove <name>`
 - `bin/wt prune` — remove merged worktrees created by `bin/wt` in bulk
 
@@ -169,7 +172,17 @@ bin/wt setup
 
 `bin/wt prune` only targets linked worktrees created by `bin/wt` whose local branches are already merged into `origin`'s default branch. It skips the main checkout, skips the checkout you're currently in, and asks for confirmation before deleting the batch.
 
-If you want to preview a single removal first, use `--dry-run` with `bin/wt remove`:
+### Teardown command
+
+Run `bin/wt teardown` **inside a linked worktree** (including manually created or Pi worktrees). It boots that app separately in test and development (so environment-specific files and database URLs are resolved correctly), checks **all** task-enabled development/test database configurations and Rails' protected-environment metadata, stops Overmind with `overmind quit --socket .overmind.sock` if that local socket exists, and drops only those validated databases through Rails' database tasks. Production databases and the checkout/branch are left alone. Multi-database configurations (primary, cache, queue, cable, etc.) are supported; replicas and configurations with `database_tasks: false` are not dropped.
+
+Teardown refuses the main checkout, a missing/blank `WORKTREE_DATABASE_SUFFIX`, and any database whose name does not contain that suffix. For SQLite, the suffix must be in the filename, not merely a parent directory. **All names are validated before Overmind or any database is touched.** A working app bundle for both environments and `bin/rails` are required; install missing gems or fix unsafe database configuration before retrying. Both environments are booted even for a dry-run, so application initializers still execute. Rails' production/environment-mismatch protection cannot be bypassed with `DISABLE_DATABASE_ENVIRONMENT_CHECK`. The resolved test configuration is passed privately to the development process; all safety checks complete before Overmind is stopped or any database is dropped.
+
+The worktree's `.env` may define a literal `WORKTREE_DATABASE_SUFFIX` (unquoted or single/double quoted, optionally with `export`). Teardown never generates a suffix. When run inside the worktree it can also use the current environment if `.env` does not define one. `remove` reads the **target's** `.env` and starts Rails with only the caller's OS/Ruby runtime variables, never its suffix, database URLs, application settings or bundle. Any other required application settings/credentials must therefore be loadable by the target app itself (for example with dotenv or Rails credentials). Ensure that target file contains the actual suffix used to create its databases.
+
+`bin/wt remove` / `delete` run this same teardown **before** deleting the worktree or branch. If validation, Overmind shutdown, or a database drop fails, removal aborts and keeps the checkout and branch. Database drops are not transactional: databases already dropped before a later failure cannot be restored by this command. If only the branch remains (the worktree directory is already gone), removal only deletes the branch. `prune` retains its existing Git-only behavior; run teardown on its candidates first if they have databases.
+
+Use `bin/wt teardown --dry-run` to list the local Overmind socket and exact development/test database names without stopping or dropping them. To preview both teardown and checkout/branch removal, use `--dry-run` with `bin/wt remove`:
 
 ```bash
 bin/wt remove --dry-run feature-auth
@@ -224,7 +237,19 @@ Existing configuration is merged, not replaced:
 
 - other keys (`dir`, `branchPrefix`, `preRemove`, …) and custom `postCreate` hooks are preserved; `bin/wt setup` is appended once and never duplicated
 - `linkEnvFiles` is only added when it is absent; an explicit `"linkEnvFiles": true`, invalid JSON, or a non-list `postCreate` is left untouched with a message explaining what to change by hand
-- no `preRemove` hook is added, and the worktree directory and branch prefix stay under your control
+- no `preRemove` hook is added automatically, and the worktree directory and branch prefix stay under your control
+
+To opt into environment cleanup when Pi's pi-worktree extension destroys a worktree, add `bin/wt teardown` to `preRemove` (preserve any existing hooks):
+
+```json
+{
+  "linkEnvFiles": false,
+  "postCreate": ["bin/wt setup"],
+  "preRemove": ["bin/wt teardown"]
+}
+```
+
+The extension runs `preRemove` from inside the worktree. Teardown only cleans the environment; the calling tool remains responsible for removing the checkout and branch. Keep `linkEnvFiles: false` so a worktree does not share the main checkout's `.env`. Preview the cleanup inside the worktree with `bin/wt teardown --dry-run` first.
 
 pi-worktree runs each `postCreate` step with a 120-second timeout. If a first `bundle install` or `db:prepare` takes longer, run `bin/wt setup` again inside the worktree.
 

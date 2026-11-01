@@ -6,7 +6,11 @@ require 'shellwords'
 require 'stringio'
 require 'tmpdir'
 
+require_relative '../../support/teardown_app'
+
 RSpec.describe Rails::Worktrees::Command do
+  include TeardownApp
+
   let(:tmpdir) { Dir.mktmpdir('rails-worktrees-command-spec') }
   let(:workspace_root_override) { File.join(tmpdir, 'workspaces') }
 
@@ -133,7 +137,7 @@ RSpec.describe Rails::Worktrees::Command do
     end
 
     it 'never routes a reserved word to worktree creation' do
-      %w[help version doctor setup update prune remove delete].each do |word|
+      %w[help version doctor setup update teardown prune remove delete].each do |word|
         command = build_command(argv: ['--dry-run', word])
         allow(command).to receive(:execute_worktree_command)
 
@@ -144,7 +148,7 @@ RSpec.describe Rails::Worktrees::Command do
     end
 
     it 'never auto-picks a reserved word from a name list' do
-      File.write(File.join(configuration.name_sources_path, 'cities.txt'), "help\nversion\n")
+      File.write(File.join(configuration.name_sources_path, 'cities.txt'), "help\nversion\nteardown\n")
       err = StringIO.new
 
       expect(build_command(argv: ['--dry-run'], stderr: err).run).to eq(1)
@@ -159,7 +163,7 @@ RSpec.describe Rails::Worktrees::Command do
 
       expect(out.string).to include(
         'reserved words are commands, never new worktree names: ' \
-        'help, version, doctor, setup, update, prune, remove, delete'
+        'help, version, doctor, setup, update, teardown, prune, remove, delete'
       )
     end
 
@@ -328,6 +332,166 @@ RSpec.describe Rails::Worktrees::Command do
       expect(err.string).to include("Bundled name 'daegu' has already been used and retired")
     end
 
+    it 'refuses teardown in the main checkout even with a suffix' do
+      err = StringIO.new
+
+      expect(build_command(argv: ['teardown'], env: { 'WORKTREE_DATABASE_SUFFIX' => '_main' },
+                           stderr: err).run).to eq(1)
+      expect(err.string).to include('Cannot teardown the main checkout')
+    end
+
+    it 'refuses teardown when the worktree suffix is missing' do
+      build_command(argv: ['feature-one']).run
+      target = File.join(configuration.workspace_root, 'app', 'feature-one')
+      File.write(File.join(target, '.env'), "DEV_PORT=3010\n")
+      err = StringIO.new
+
+      expect(build_command(argv: ['teardown'], cwd: target, stderr: err).run).to eq(1)
+      expect(err.string).to include('WORKTREE_DATABASE_SUFFIX must not be empty')
+      expect(File.exist?(File.join(target, 'effects.log'))).to be(false)
+    end
+
+    it 'tears down the worktree environment without deleting its checkout or branch' do
+      build_command(argv: ['feature-one']).run
+      target = File.join(configuration.workspace_root, 'app', 'feature-one')
+      install_teardown_app(target)
+      tools = File.join(tmpdir, 'tools')
+      install_teardown_overmind(target, tools)
+      env = { 'PATH' => "#{tools}:#{ENV.fetch('PATH')}" }
+
+      expect(build_command(argv: ['teardown'], cwd: target, env: env).run).to eq(0)
+      effects = File.readlines(File.join(target, 'effects.log'), chomp: true)
+      expect(effects).to eq([
+                              'overmind quit --socket .overmind.sock',
+                              'drop app_development_feature_one', 'drop app_development_feature_one_cache',
+                              'drop app_test_feature_one', 'drop app_test_feature_one_queue'
+                            ])
+      expect(File.directory?(target)).to be(true)
+      expect(local_branch_exists?('🚂/feature-one')).to be(true)
+    end
+
+    context 'with a prepared teardown app' do
+      let(:target) { File.join(configuration.workspace_root, 'app', 'feature-one') }
+
+      before do
+        build_command(argv: ['feature-one']).run
+        install_teardown_app(target)
+      end
+
+      ['', '   ', "''", '""'].each do |suffix|
+        it "refuses an empty suffix (#{suffix.inspect}) without effects" do
+          File.write(File.join(target, '.env'), "WORKTREE_DATABASE_SUFFIX=#{suffix}\n")
+          err = StringIO.new
+
+          expect(build_command(argv: ['teardown'], cwd: target, stderr: err).run).to eq(1)
+          expect(err.string).to include('WORKTREE_DATABASE_SUFFIX must not be empty')
+          expect(File.exist?(File.join(target, 'effects.log'))).to be(false)
+        end
+      end
+
+      it 'previews both environments and the local Overmind without effects' do
+        install_teardown_overmind(target, File.join(tmpdir, 'tools'))
+        out = StringIO.new
+
+        expect(build_command(argv: %w[teardown --dry-run], cwd: target, stdout: out).run).to eq(0)
+        expect(out.string).to include('Would stop Overmind', "Would drop database 'app_development_feature_one'",
+                                      "Would drop database 'app_test_feature_one_queue'")
+        expect(out.string).not_to include('app_production')
+        expect(File.exist?(File.join(target, 'effects.log'))).to be(false)
+      end
+
+      it 'validates every database before stopping Overmind or dropping anything' do
+        install_teardown_app(target, databases: { 'development' => ['app_development_feature_one'],
+                                                  'test' => ['app_test'] })
+        install_teardown_overmind(target, File.join(tmpdir, 'tools'))
+        out = StringIO.new
+
+        expect(build_command(argv: ['teardown'], cwd: target, stdout: out).run).to eq(1)
+        expect(out.string).to include("Database 'app_test'", 'does not contain WORKTREE_DATABASE_SUFFIX')
+        expect(File.exist?(File.join(target, 'effects.log'))).to be(false)
+      end
+
+      it 'does not accept a suffix only present in a SQLite parent directory' do
+        install_teardown_app(target, databases: { 'development' => ['storage/_feature_one/development.sqlite3'],
+                                                  'test' => ['storage/test_feature_one.sqlite3'] })
+
+        expect(build_command(argv: ['teardown'], cwd: target).run).to eq(1)
+        expect(File.exist?(File.join(target, 'effects.log'))).to be(false)
+      end
+
+      it 'boots test separately instead of deleting its development-loaded fallback configuration' do
+        File.write(File.join(target, 'databases-test.json'),
+                   JSON.generate('test' => ['actual_test_feature_one']))
+        out = StringIO.new
+
+        expect(build_command(argv: %w[teardown --dry-run], cwd: target, stdout: out).run).to eq(0)
+        expect(out.string).to include("Would drop database 'actual_test_feature_one'")
+        expect(out.string).not_to include("Would drop database 'app_test_feature_one'")
+        expect(File.exist?(File.join(target, 'effects.log'))).to be(false)
+      end
+
+      it 'honors Rails production metadata for all databases before any effects, even with checks disabled' do
+        File.write(File.join(target, 'protected-test'), '')
+        install_teardown_overmind(target, File.join(tmpdir, 'tools'))
+        out = StringIO.new
+
+        expect(build_command(argv: ['teardown'], cwd: target, stdout: out,
+                             env: { 'DISABLE_DATABASE_ENVIRONMENT_CHECK' => '1' }).run).to eq(1)
+        expect(out.string).to include('Database is protected: production')
+        expect(File.exist?(File.join(target, 'effects.log'))).to be(false)
+        expect(File.directory?(target)).to be(true)
+      end
+
+      it 'preserves the worktree and branch when dropping a database fails' do
+        File.write(File.join(target, 'fail-drop'), '')
+
+        expect(build_command(argv: %w[remove feature-one]).run).to eq(1)
+        expect(File.directory?(target)).to be(true)
+        expect(local_branch_exists?('🚂/feature-one')).to be(true)
+      end
+
+      it 'keeps databases when Overmind cannot be stopped' do
+        tools = File.join(tmpdir, 'tools')
+        install_teardown_overmind(target, tools)
+        File.write(File.join(target, 'fail-overmind'), '')
+
+        expect(build_command(argv: ['teardown'], cwd: target,
+                             env: { 'PATH' => "#{tools}:#{ENV.fetch('PATH')}" }).run).to eq(1)
+        expect(File.read(File.join(target, 'effects.log'))).not_to include('drop ')
+      end
+
+      it 'shows the target databases in a remove dry-run and preserves the checkout' do
+        out = StringIO.new
+
+        expect(build_command(argv: %w[remove --dry-run feature-one], stdout: out).run).to eq(0)
+        expect(out.string).to include("Would drop database 'app_development_feature_one'",
+                                      "Would drop database 'app_test_feature_one_queue'",
+                                      'Would remove registered worktree')
+        expect(File.directory?(target)).to be(true)
+        expect(File.exist?(File.join(target, 'effects.log'))).to be(false)
+      end
+
+      it 'never drops a sibling database selected by inherited routing variables' do
+        out = StringIO.new
+        caller_env = { 'DATABASE_URL' => 'postgresql://localhost/app_development_feature_one_sibling' }
+
+        expect(build_command(argv: %w[remove --dry-run feature-one], env: caller_env, stdout: out).run).to eq(0)
+        expect(out.string).to include("Would drop database 'app_development_feature_one'")
+        expect(out.string).not_to include('app_development_feature_one_sibling')
+        expect(File.exist?(File.join(target, 'effects.log'))).to be(false)
+      end
+
+      it 'does not borrow the caller suffix for a target with no suffix' do
+        File.write(File.join(target, '.env'), "DEV_PORT=3010\n")
+        err = StringIO.new
+
+        expect(build_command(argv: %w[remove feature-one], env: { 'WORKTREE_DATABASE_SUFFIX' => '_caller' },
+                             stderr: err).run).to eq(1)
+        expect(err.string).to include('WORKTREE_DATABASE_SUFFIX must not be empty')
+        expect(File.directory?(target)).to be(true)
+      end
+    end
+
     it 'removes a merged worktree and deletes its local branch' do
       build_command(argv: ['feature-one']).run
       target_dir = File.join(configuration.workspace_root, 'app', 'feature-one')
@@ -336,8 +500,10 @@ RSpec.describe Rails::Worktrees::Command do
       commit_in_worktree(target_dir, 'feature.txt', "hello\n")
       merge_worktree_branch('🚂/feature-one')
 
+      install_teardown_app(target_dir)
       expect(build_command(argv: %w[remove feature-one], stdout: out).run).to eq(0)
 
+      expect(out.string).to include("Dropping database 'app_test_feature_one_queue'")
       expect(File.exist?(target_dir)).to be(false)
       expect(local_branch_exists?('🚂/feature-one')).to be(false)
       expect(out.string).to include("Removed 'feature-one'")
@@ -350,6 +516,7 @@ RSpec.describe Rails::Worktrees::Command do
       commit_in_worktree(target_dir, 'feature.txt', "hello\n")
       merge_worktree_branch('🚂/feature-one')
 
+      install_teardown_app(target_dir)
       expect(build_command(argv: %w[delete feature-one]).run).to eq(0)
 
       expect(File.exist?(target_dir)).to be(false)
@@ -386,6 +553,7 @@ RSpec.describe Rails::Worktrees::Command do
 
       commit_in_worktree(target_dir, 'feature.txt', "hello\n")
 
+      install_teardown_app(target_dir)
       expect(build_command(argv: ['remove', '--force', 'feature-one'], stdout: out).run).to eq(0)
 
       expect(File.exist?(target_dir)).to be(false)
@@ -414,7 +582,9 @@ RSpec.describe Rails::Worktrees::Command do
       commit_in_worktree(target_dir, 'feature.txt', "hello\n")
       merge_worktree_branch('🚂/feature-one')
 
-      expect(build_command(argv: %w[remove feature-one], cwd: runner_dir).run).to eq(0)
+      install_teardown_app(target_dir)
+      expect(build_command(argv: %w[remove feature-one], cwd: runner_dir,
+                           env: { 'WORKTREE_DATABASE_SUFFIX' => '_runner' }).run).to eq(0)
 
       expect(File.exist?(target_dir)).to be(false)
       expect(local_branch_exists?('🚂/feature-one')).to be(false)

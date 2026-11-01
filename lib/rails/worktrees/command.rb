@@ -18,7 +18,7 @@ module Rails
       UPDATE_SUBCOMMAND = 'update'.freeze
       PI_FLAG_EXEMPT_META_COMMANDS = %w[-h --help help -v --version version].freeze
       # Command words that wt never treats as a worktree name.
-      RESERVED_WORDS = %w[help version doctor setup update prune remove delete].freeze
+      RESERVED_WORDS = %w[help version doctor setup update teardown prune remove delete].freeze
 
       include GitOperations
       include EnvironmentSupport
@@ -119,6 +119,7 @@ module Rails
         when SETUP_SUBCOMMAND then -> { execute_setup_command }
         when UPDATE_SUBCOMMAND then -> { execute_update_command }
         when 'prune' then -> { execute_prune_command }
+        when 'teardown' then -> { execute_teardown_command }
         else
           -> { execute_remove_command } if remove_subcommand?
         end
@@ -159,6 +160,25 @@ module Rails
         complete_setup_flow(context, success_message: 'Setup complete')
       end
 
+      def execute_teardown_command
+        raise Error, 'Usage: wt teardown [--dry-run]' unless @argv.length == 1 && !force? && !skip_setup?
+
+        require_git_repo
+        repository = resolve_repository_context
+        if repository[:current_root] == repository[:primary_root]
+          raise Error, 'Cannot teardown the main checkout. Run wt teardown inside a linked worktree.'
+        end
+
+        teardown_worktree(repository[:current_root], use_current_env: true)
+        success(dry_run? ? 'Dry run complete' : 'Teardown complete')
+        0
+      end
+
+      def teardown_worktree(target_dir, use_current_env: false)
+        TeardownRunner.new(target_dir: target_dir, env: @env, io: { stdout: @stdout },
+                           use_current_env: use_current_env).call(dry_run: dry_run?)
+      end
+
       def execute_remove_command
         require_git_repo
         announce_dry_run if dry_run?
@@ -168,6 +188,7 @@ module Rails
         removal_status = removal_status_for(context)
 
         ensure_removable!(context, **removal_status)
+        teardown_worktree(context[:target_dir]) if removal_status[:worktree_exists]
         return complete_remove_dry_run(context, **removal_status) if dry_run?
 
         perform_remove(context, **removal_status)
