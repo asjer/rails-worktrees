@@ -233,10 +233,10 @@ printf '%s\n' "$RUNNER_OUTPUT"
 say 'Checking teardown with real Rails environment URLs and production metadata'
 cp "$EXPECTED_WORKTREE/config/database.yml" "$EXPECTED_WORKTREE/config/database.yml.smoke-backup"
 cp "$EXPECTED_WORKTREE/config/environments/test.rb" "$EXPECTED_WORKTREE/config/environments/test.rb.smoke-backup"
+cp "$EXPECTED_WORKTREE/config/environments/development.rb" "$EXPECTED_WORKTREE/config/environments/development.rb.smoke-backup"
 cat >"$EXPECTED_WORKTREE/config/database.yml" <<'EOF'
 development:
-  adapter: sqlite3
-  database: storage/development_smoke_branch.sqlite3
+  url: sqlite3:<%= Rails.root.join('storage/development_smoke_branch.sqlite3') %>
 test:
   adapter: sqlite3
   database: storage/<%= Rails.env.test? ? 'test_boot_smoke_branch' : 'fallback_test_smoke_branch' %>.sqlite3
@@ -258,6 +258,22 @@ grep -Fq 'production' <<<"$PROTECTED_OUTPUT" || fail 'Expected Rails protected e
 [[ -e "$EXPECTED_WORKTREE/storage/development_smoke_branch.sqlite3" ]] || fail 'Protected test database must prevent development deletion too'
 [[ -e "$EXPECTED_WORKTREE/storage/effective_test_smoke_branch.sqlite3" ]] || fail 'Protected test database must be retained'
 (cd "$EXPECTED_WORKTREE" && bin/rails runner -e test 'ActiveRecord::Base.connection_pool.internal_metadata[:environment] = "test"')
+
+say 'Checking explicit YAML URL protection cannot be redirected by a conflicting environment URL'
+printf '\nENV["DATABASE_URL"] = "sqlite3:%s/storage/decoy_development_smoke_branch.sqlite3"\n' "$EXPECTED_WORKTREE" >>"$EXPECTED_WORKTREE/config/environments/development.rb"
+(cd "$EXPECTED_WORKTREE" && bin/rails runner -e development 'pool = ActiveRecord::Base.connection_pool; pool.schema_migration.create_table; pool.schema_migration.create_version("1"); pool.internal_metadata.create_table_and_set_flags("production")')
+touch "$EXPECTED_WORKTREE/.overmind.sock"
+if EXPLICIT_URL_OUTPUT="$(cd "$EXPECTED_WORKTREE" && bin/wt teardown 2>&1)"; then
+  fail 'Explicit YAML URL with production metadata must be protected'
+fi
+grep -Fq 'production' <<<"$EXPLICIT_URL_OUTPUT" || fail 'Expected protection of the explicit YAML URL, not an environment URL decoy'
+if grep -Fq 'Stopping Overmind' <<<"$EXPLICIT_URL_OUTPUT"; then
+  fail 'Production metadata must be checked before stopping Overmind'
+fi
+[[ -e "$EXPECTED_WORKTREE/storage/development_smoke_branch.sqlite3" ]] || fail 'Explicit protected database must remain'
+[[ -e "$EXPECTED_WORKTREE/storage/effective_test_smoke_branch.sqlite3" ]] || fail 'Protected development must retain test too'
+mv "$EXPECTED_WORKTREE/.overmind.sock" "$ORIGIN_ROOT/checked-overmind.sock"
+(cd "$EXPECTED_WORKTREE" && bin/rails runner -e development 'ActiveRecord::Base.connection_pool.internal_metadata[:environment] = "development"')
 TEARDOWN_OUTPUT="$(cd "$EXPECTED_WORKTREE" && bin/wt teardown)"
 printf '%s\n' "$TEARDOWN_OUTPUT"
 [[ ! -e "$EXPECTED_WORKTREE/storage/effective_test_smoke_branch.sqlite3" ]] || fail 'Expected the effective test database to be dropped'
@@ -265,6 +281,7 @@ printf '%s\n' "$TEARDOWN_OUTPUT"
 [[ "$(git -C "$EXPECTED_WORKTREE" branch --show-current)" == '🚂/smoke-branch' ]] || fail 'Standalone teardown must keep the branch'
 mv "$EXPECTED_WORKTREE/config/database.yml.smoke-backup" "$EXPECTED_WORKTREE/config/database.yml"
 mv "$EXPECTED_WORKTREE/config/environments/test.rb.smoke-backup" "$EXPECTED_WORKTREE/config/environments/test.rb"
+mv "$EXPECTED_WORKTREE/config/environments/development.rb.smoke-backup" "$EXPECTED_WORKTREE/config/environments/development.rb"
 
 say 'Checking removal isolates sibling DATABASE_URL and named database URLs'
 ISOLATED_PREVIEW="$(cd "$RUNNER_WORKTREE" && DATABASE_URL="sqlite3:$RUNNER_WORKTREE/storage/sibling_smoke_branch.sqlite3" PRIMARY_DATABASE_URL="sqlite3:$RUNNER_WORKTREE/storage/sibling_smoke_branch.sqlite3" WT_WORKSPACES_ROOT="$WORKSPACES_ROOT" bin/wt remove --dry-run smoke-branch)"

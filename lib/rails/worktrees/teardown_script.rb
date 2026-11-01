@@ -58,7 +58,8 @@ module Rails
       def check_protection!(databases)
         original = ActiveRecord::Base.configurations
         existing = existing_databases(databases)
-        ActiveRecord::Base.configurations = existing.group_by(&:env_name).transform_values { |configs| config_hash(configs) }
+        # Keep the resolved objects: rebuilding hashes would reapply environment URLs to explicit YAML URLs.
+        ActiveRecord::Base.configurations = existing
         ENV.delete('DISABLE_DATABASE_ENVIRONMENT_CHECK')
         existing.map(&:env_name).uniq.each do |environment|
           ActiveRecord::Tasks::DatabaseTasks.check_protected_environments!(environment)

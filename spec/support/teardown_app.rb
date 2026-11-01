@@ -38,6 +38,8 @@ module TeardownApp
           end
 
           def configs_for(env_name:, **)
+            return @configs.select { |config| config.env_name == env_name } if @configs.is_a?(Array)
+
             entries = @configs.fetch(env_name, {})
             if entries.is_a?(Array)
               entries = entries.each_with_index.to_h { |database, index| [index.to_s, { 'database' => database }] }
