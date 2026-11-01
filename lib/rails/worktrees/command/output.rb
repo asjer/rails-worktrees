@@ -37,6 +37,7 @@ module Rails
                    wt doctor
                    wt setup [--dry-run] [path|name]
                    wt update [--dry-run] [--pi]
+                   wt teardown [--dry-run]
                    wt remove [--dry-run] [--force] <worktree-name>
                    wt delete [--dry-run] [--force] <worktree-name>
                    wt prune [--dry-run]
@@ -61,6 +62,8 @@ module Rails
               wt setup my-feature
               wt setup ../my-project.worktrees/my-feature
               wt update --dry-run
+              wt teardown --dry-run
+              wt teardown
               wt remove my-feature
               wt remove --force my-feature
               wt prune
@@ -76,6 +79,8 @@ module Rails
               - wt doctor audits install/config drift plus basic worktree health without changing files
               - wt update applies safe file-based fixes for managed installer artifacts and config hints
               - wt update --pi also writes .pi/worktree.json for the pi-worktree extension (not Pi core)
+              - wt teardown stops local Overmind and drops suffix-validated development/test databases, keeping the checkout
+              - wt remove/delete run teardown before removing the checkout and local branch
               - wt remove/delete can run from the main checkout or any sibling worktree, but never remove the worktree you're currently in
               - wt prune removes merged worktrees created by wt while skipping the main checkout and the checkout you're in
               - auto-discovers bundled *.txt files from #{@configuration.name_sources_path}

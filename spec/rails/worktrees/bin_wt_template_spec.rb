@@ -337,6 +337,19 @@ RSpec.describe 'generated bin/wt template' do
     expect(stderr).not_to include('falling back to the globally installed wt executable')
   end
 
+  it 'does not use the bootstrap fallback for teardown' do
+    install_bootstrap_fallback_test_app
+
+    _stdout, stderr, status = run_wt(
+      { 'GEM_HOME' => fallback_gem_home, 'GEM_PATH' => fallback_gem_home },
+      %w[teardown --dry-run]
+    )
+
+    expect(status).not_to be_success
+    expect(stderr).to include('cannot start wt because the app bundle is incomplete')
+    expect(stderr).not_to include('falling back to the globally installed wt executable')
+  end
+
   it 'does not export LC_ALL when it was unset while fixing LANG' do
     _stdout, stderr, status = run_wt('LC_ALL' => nil)
 

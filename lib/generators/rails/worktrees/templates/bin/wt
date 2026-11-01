@@ -84,7 +84,7 @@ def rails_worktrees_bootstrap_safe_invocation?(argv)
   command = command_args.first
 
   return true if %w[setup doctor update].include?(command)
-  return false if %w[remove delete prune].include?(command)
+  return false if %w[remove delete prune teardown].include?(command)
 
   command_args.length <= 1
 end
