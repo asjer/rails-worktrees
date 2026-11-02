@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.9.0](https://github.com/asjer/rails-worktrees/compare/v0.8.0...v0.9.0) (2026-11-02)
+
+
+### Features
+
+* **config:** support worktrees inside the repo via worktrees_dir ([#61](https://github.com/asjer/rails-worktrees/issues/61)) ([681f325](https://github.com/asjer/rails-worktrees/commit/681f325584b69fc675f7fce045c5cd8baf36eb83))
+* **setup:** install Playwright Chromium for the pinned version ([#66](https://github.com/asjer/rails-worktrees/issues/66)) ([cdbef7c](https://github.com/asjer/rails-worktrees/commit/cdbef7c24f738674dd209af35da25d4f85e038ed))
+* **wt:** add guarded worktree teardown with dry-run ([#63](https://github.com/asjer/rails-worktrees/issues/63)) ([5592830](https://github.com/asjer/rails-worktrees/commit/5592830849b098e0d904d70cf96390dc55083356))
+
+
+### Bug Fixes
+
+* **wt:** reserve help and version instead of using them as names ([#60](https://github.com/asjer/rails-worktrees/issues/60)) ([d52dba8](https://github.com/asjer/rails-worktrees/commit/d52dba83525ef21f11840db0b691174ccf896a33))
+
 ## [0.8.0](https://github.com/asjer/rails-worktrees/compare/v0.7.4...v0.8.0) (2026-10-24)
 
 
