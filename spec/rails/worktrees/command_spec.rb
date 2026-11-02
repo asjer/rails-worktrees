@@ -1165,6 +1165,7 @@ RSpec.describe Rails::Worktrees::Command do
         commit_in_worktree(target_dir, 'feature.txt', "hello\n")
         merge_worktree_branch('🚂/feature-one')
 
+        install_teardown_app(target_dir)
         expect(build_command(argv: %w[remove feature-one]).run).to eq(0)
 
         expect(File.exist?(target_dir)).to be(false)

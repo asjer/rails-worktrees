@@ -28,6 +28,7 @@ Rails.application.config.x.rails_worktrees.tap do |config|
   # config.post_create_command = nil    # nil = built-in steps; false = skip all; 'script/worktree-setup' = custom command
   # config.run_bundle_install = true
   # config.run_yarn_install = true      # auto-skipped when yarn.lock is absent
+  # config.run_playwright_install = true # installs Playwright Chromium when package.json uses playwright
   # config.run_db_prepare = true
   # config.run_test_db_prepare = true
   # config.run_test_assets_precompile = true

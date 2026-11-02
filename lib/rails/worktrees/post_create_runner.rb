@@ -3,7 +3,7 @@ require 'open3'
 module Rails
   module Worktrees
     # Runs post-create setup steps in a newly created worktree.
-    # Steps run in order: credential linking, bundle install, yarn install,
+    # Steps run in order: credential linking, bundle install, yarn install, Playwright Chromium install,
     # db:prepare (development), db:prepare (test), assets:precompile (test), assets:clobber.
     # rubocop:disable Metrics/ClassLength
     class PostCreateRunner
@@ -12,6 +12,8 @@ module Rails
           header: '📦 Installing gems...' },
         { id: :yarn, argv: %w[yarn install],
           header: '🧶 Installing JS dependencies...' },
+        { id: :playwright, argv: [PlaywrightBrowserCheck::CLI_PATH, 'install', PlaywrightBrowserCheck::BROWSER],
+          header: '🎭 Installing Playwright Chromium...' },
         { id: :db_prepare, argv: %w[bin/rails db:prepare],
           header: '🗄️  Preparing development database...', env: { 'RAILS_ENV' => 'development' } },
         { id: :test_db_prepare, argv: %w[bin/rails db:prepare],
@@ -25,6 +27,7 @@ module Rails
       STEP_CONFIG = {
         bundle: :run_bundle_install,
         yarn: :run_yarn_install,
+        playwright: :run_playwright_install,
         db_prepare: :run_db_prepare,
         test_db_prepare: :run_test_db_prepare,
         test_assets_precompile: :run_test_assets_precompile,
@@ -78,13 +81,50 @@ module Rails
         STEPS.each do |step|
           config_attr = STEP_CONFIG[step[:id]]
           next unless @configuration.public_send(config_attr)
-          next if step[:id] == :yarn && !yarn_lock_present?
+          next unless step_applicable?(step)
 
-          result = run_step(step, dry_run: dry_run)
+          result = run_built_in_step(step, dry_run: dry_run)
           return result unless result.zero?
         end
 
         0
+      end
+
+      def step_applicable?(step)
+        case step[:id]
+        when :yarn then yarn_lock_present?
+        when :playwright then yarn_lock_present? && playwright_browser_check.applicable?
+        else true
+        end
+      end
+
+      def run_built_in_step(step, dry_run:)
+        return run_playwright_step(step, dry_run: dry_run) if step[:id] == :playwright
+
+        run_step(step, dry_run: dry_run)
+      end
+
+      # Always runs the real installer: it skips cached downloads itself and registers this
+      # worktree in the shared browser cache, so a later cleanup keeps its browsers.
+      def run_playwright_step(step, dry_run:)
+        check = playwright_browser_check
+        return preview_playwright_step(step, check) if dry_run
+
+        unless check.cli_present?
+          info("⚠️  Skipping Playwright Chromium: #{PlaywrightBrowserCheck::CLI_PATH} was not found.")
+          return 0
+        end
+
+        run_step(step, dry_run: false)
+      end
+
+      def preview_playwright_step(step, check)
+        info('🎭 Playwright Chromium is already installed; no download needed.') if check.installed?
+        run_step(step, dry_run: true)
+      end
+
+      def playwright_browser_check
+        PlaywrightBrowserCheck.new(target_dir: @target_dir, env: runtime_env)
       end
 
       def run_credential_linking(dry_run:)
@@ -158,7 +198,8 @@ module Rails
                        'BUNDLE_GEMFILE', 'BUNDLE_PATH', 'GEM_HOME', 'GEM_PATH',
                        'RUBY_VERSION', 'RAILS_ENV', 'NODE_ENV',
                        'XDG_STATE_HOME', 'XDG_DATA_HOME', 'XDG_CONFIG_HOME',
-                       'DEV_PORT', 'WORKTREE_DATABASE_SUFFIX')
+                       'DEV_PORT', 'WORKTREE_DATABASE_SUFFIX',
+                       'PLAYWRIGHT_BROWSERS_PATH')
       end
 
       attr_reader :runtime_env

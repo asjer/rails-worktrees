@@ -92,7 +92,7 @@ By default `bin/wt`:
 - auto-picks names from bundled `.txt` files when no explicit name is given
 - retires bundled names so they are not picked twice
 - bootstraps a worktree-local `.env` with deterministic `DEV_PORT` and `WORKTREE_DATABASE_SUFFIX` values
-- runs setup automatically after creation: credential linking, `bundle install`, `yarn install` when applicable, both `db:prepare` steps, test asset precompile, and a final `bin/rails assets:clobber`
+- runs setup automatically after creation: credential linking, `bundle install`, `yarn install` when applicable, the Playwright Chromium build for the pinned `playwright` package when it is missing, both `db:prepare` steps, test asset precompile, and a final `bin/rails assets:clobber`
 
 ```text
 workspace/
