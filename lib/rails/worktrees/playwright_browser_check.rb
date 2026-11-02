@@ -29,8 +29,11 @@ module Rails
         false
       end
 
-      # Returns false whenever the installed state cannot be proven; Playwright's own
-      # installer then skips browsers that are already complete.
+      def cli_present?
+        File.exist?(File.join(@target_dir, CLI_PATH))
+      end
+
+      # Returns false whenever the installed state cannot be proven.
       def installed?
         locations = install_locations
         !locations.empty? && locations.all? { |location| File.file?(File.join(location, INSTALLATION_MARKER)) }
@@ -39,7 +42,7 @@ module Rails
       private
 
       def install_locations
-        return [] unless File.exist?(File.join(@target_dir, CLI_PATH))
+        return [] unless cli_present?
 
         output, status = Open3.capture2e(@env, CLI_PATH, 'install', '--dry-run', BROWSER, chdir: @target_dir)
         return [] unless status.success?

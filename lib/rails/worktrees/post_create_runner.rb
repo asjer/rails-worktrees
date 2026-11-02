@@ -12,7 +12,7 @@ module Rails
           header: '📦 Installing gems...' },
         { id: :yarn, argv: %w[yarn install],
           header: '🧶 Installing JS dependencies...' },
-        { id: :playwright, argv: %w[yarn playwright install chromium],
+        { id: :playwright, argv: [PlaywrightBrowserCheck::CLI_PATH, 'install', PlaywrightBrowserCheck::BROWSER],
           header: '🎭 Installing Playwright Chromium...' },
         { id: :db_prepare, argv: %w[bin/rails db:prepare],
           header: '🗄️  Preparing development database...', env: { 'RAILS_ENV' => 'development' } },
@@ -104,13 +104,23 @@ module Rails
         run_step(step, dry_run: dry_run)
       end
 
+      # Always runs the real installer: it skips cached downloads itself and registers this
+      # worktree in the shared browser cache, so a later cleanup keeps its browsers.
       def run_playwright_step(step, dry_run:)
-        if playwright_browser_check.installed?
-          info('🎭 Playwright Chromium is already installed; skipping download.')
+        check = playwright_browser_check
+        return preview_playwright_step(step, check) if dry_run
+
+        unless check.cli_present?
+          info("⚠️  Skipping Playwright Chromium: #{PlaywrightBrowserCheck::CLI_PATH} was not found.")
           return 0
         end
 
-        run_step(step, dry_run: dry_run)
+        run_step(step, dry_run: false)
+      end
+
+      def preview_playwright_step(step, check)
+        info('🎭 Playwright Chromium is already installed; no download needed.') if check.installed?
+        run_step(step, dry_run: true)
       end
 
       def playwright_browser_check

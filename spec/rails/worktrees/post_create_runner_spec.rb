@@ -343,7 +343,7 @@ RSpec.describe Rails::Worktrees::PostCreateRunner do
     end
 
     context 'with a playwright browser step' do
-      let(:playwright_command) { %w[yarn playwright install chromium] }
+      let(:playwright_command) { %w[node_modules/.bin/playwright install chromium] }
 
       before do
         configuration.run_playwright_install = true
@@ -382,7 +382,10 @@ RSpec.describe Rails::Worktrees::PostCreateRunner do
           .and_return([output, status])
       end
 
-      it 'installs chromium when playwright is not installed in node_modules yet' do
+      it 'runs the playwright binary directly so a package script cannot shadow it' do
+        install_playwright_cli!
+        write_package_json('scripts' => { 'playwright' => 'playwright test' },
+                           'devDependencies' => { 'playwright' => '1.61.1' })
         commands = stub_popen2e_sequence(popen_result)
 
         expect(build_runner.call).to eq(0)
@@ -391,24 +394,11 @@ RSpec.describe Rails::Worktrees::PostCreateRunner do
         expect(out).to include('Installing Playwright Chromium')
       end
 
-      it 'does not download chromium again when the matching browser is already installed' do
+      it 'still runs the installer when chromium is cached so Playwright registers this worktree' do
         install_playwright_cli!
         install_browser!('chromium-1228')
         install_browser!('chromium_headless_shell-1228')
         stub_playwright_probe(output: dry_run_output('chromium-1228', 'chromium_headless_shell-1228'))
-        allow(Open3).to receive(:popen2e)
-
-        expect(build_runner.call).to eq(0)
-
-        expect(Open3).not_to have_received(:popen2e)
-        expect(out).to include('Playwright Chromium is already installed')
-      end
-
-      it 'installs chromium when a browser for the pinned playwright version is missing' do
-        install_playwright_cli!
-        install_browser!('chromium-1208')
-        install_browser!('chromium_headless_shell-1208')
-        stub_playwright_probe(output: dry_run_output('chromium-1228', 'chromium_headless_shell-1228'))
         commands = stub_popen2e_sequence(popen_result)
 
         expect(build_runner.call).to eq(0)
@@ -416,40 +406,38 @@ RSpec.describe Rails::Worktrees::PostCreateRunner do
         expect_single_command(commands, env: runner_env, command: playwright_command)
       end
 
-      it 'installs chromium when a browser download was left incomplete' do
+      it 'warns and skips the browser install when the playwright binary is missing' do
+        allow(Open3).to receive(:popen2e)
+
+        expect(build_runner.call).to eq(0)
+
+        expect(Open3).not_to have_received(:popen2e)
+        expect(out).to include('node_modules/.bin/playwright was not found')
+      end
+
+      it 'shows the browser install in a dry run before node_modules exists' do
+        allow(Open3).to receive(:popen2e)
+
+        expect(build_runner.call(dry_run: true)).to eq(0)
+
+        expect(out).to include('Would run: node_modules/.bin/playwright install chromium')
+        expect(out).not_to include('already installed')
+        expect(Open3).not_to have_received(:popen2e)
+      end
+
+      it 'shows a download in a dry run when a cached browser was left incomplete' do
         install_playwright_cli!
         install_browser!('chromium-1228')
         FileUtils.mkdir_p(File.join(browsers_dir, 'chromium_headless_shell-1228'))
         stub_playwright_probe(output: dry_run_output('chromium-1228', 'chromium_headless_shell-1228'))
-        commands = stub_popen2e_sequence(popen_result)
-
-        expect(build_runner.call).to eq(0)
-
-        expect_single_command(commands, env: runner_env, command: playwright_command)
-      end
-
-      it 'installs chromium when the installed state cannot be determined' do
-        install_playwright_cli!
-        stub_playwright_probe(output: 'error: unknown option', success: false)
-        commands = stub_popen2e_sequence(popen_result)
-
-        expect(build_runner.call).to eq(0)
-
-        expect_single_command(commands, env: runner_env, command: playwright_command)
-      end
-
-      it 'shows the browser install in a dry run when it is needed' do
-        install_playwright_cli!
-        stub_playwright_probe(output: dry_run_output('chromium-1228'))
-        allow(Open3).to receive(:popen2e)
 
         expect(build_runner.call(dry_run: true)).to eq(0)
 
-        expect(out).to include('Would run: yarn playwright install chromium')
-        expect(Open3).not_to have_received(:popen2e)
+        expect(out).to include('Would run: node_modules/.bin/playwright install chromium')
+        expect(out).not_to include('already installed')
       end
 
-      it 'shows the skipped browser install in a dry run when chromium is already installed' do
+      it 'shows in a dry run that a cached chromium needs no download' do
         install_playwright_cli!
         install_browser!('chromium-1228')
         stub_playwright_probe(output: dry_run_output('chromium-1228'))
@@ -457,11 +445,12 @@ RSpec.describe Rails::Worktrees::PostCreateRunner do
 
         expect(build_runner.call(dry_run: true)).to eq(0)
 
-        expect(out).to include('Playwright Chromium is already installed')
-        expect(out).not_to include('Would run: yarn playwright install chromium')
+        expect(out).to include('Playwright Chromium is already installed; no download needed')
+        expect(Open3).not_to have_received(:popen2e)
       end
 
       it 'passes a custom PLAYWRIGHT_BROWSERS_PATH to the browser install' do
+        install_playwright_cli!
         commands = stub_popen2e_sequence(popen_result)
         original = ENV.fetch('PLAYWRIGHT_BROWSERS_PATH', nil)
         ENV['PLAYWRIGHT_BROWSERS_PATH'] = browsers_dir
